@@ -290,7 +290,7 @@ function buildPrintHTML(doc) {
   }
   html += frontMatterHTML(doc, pageStyle, geom);
   const showNums = !!doc.settings?.sceneNumbers;
-  pages.forEach((lines, pi) => {
+  if (!doc._noScript) pages.forEach((lines, pi) => {
     let body = '';
     lines.forEach(l => {
       if (l.blank) { body += `<div class="pl" style="height:${lh}in"></div>`; return; }

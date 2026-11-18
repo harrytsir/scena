@@ -1024,7 +1024,7 @@ function renderTitleView() {
   const sheet = (inner, cls = '') => `<div class="sheet ${cls}" style="width:${p.w}in;${cls ? 'min-height' : 'height'}:${p.h}in;font-family:var(--script-font)">${inner}</div>`;
   const inp = (k, ph, style, c = 'center') => `<input class="tp-edit ${c}" data-tp="${k}" value="${escHTML(k === 'title' ? d.title : m[k] || '')}" placeholder="${ph}" style="${style}">`;
   const ta = (k, ph, style, rows) => `<textarea class="tp-edit" data-tp="${k}" rows="${rows}" placeholder="${ph}" style="${style}">${escHTML(m[k] || '')}</textarea>`;
-  const incl = (k, on, what) => `<label class="fv-incl"><input type="checkbox" data-incl="${k}" ${on ? 'checked' : ''}> Include ${what} in PDF &amp; Word exports</label>`;
+  const incl = () => '';
   let body = '';
   if (sec === 'title') {
     body = incl('title', d.settings.titlePage, 'the title page') + sheet(
@@ -1036,7 +1036,7 @@ function renderTitleView() {
       ta('contact', 'Contact details\n(name, phone, email)', 'left:1.5in;bottom:0.9in;width:3in;text-align:left', 4) +
       ta('draft', 'Draft / date', 'right:1in;bottom:0.9in;width:2.4in;text-align:right', 3));
   } else if (sec === 'cast') {
-    body = `<p class="fv-help">Printed on its own page after the title page, when filled in.</p>` + sheet(
+    body = sheet(
       `<div class="tp-edit center" style="top:1in;border:0;text-decoration:underline">${WORDS[docLang(d)].cast}</div>` +
       ta('cast', 'One character per line, e.g.\nΓΕΝ – artificial intelligence\nΕΛΕΝΗ – scientist, 40', 'left:1.5in;right:1in;top:1.6in;height:8in;width:auto', 30));
   } else if (sec === 'logline') {
@@ -1056,11 +1056,7 @@ $('#titleview').addEventListener('click', e => {
   const b = e.target.closest('[data-front]'); if (!b) return;
   S.front = b.dataset.front; renderTitleView();
 });
-$('#titleview').addEventListener('change', e => {
-  const k = e.target.dataset.incl; if (!k) return;
-  if (k === 'title') S.doc.settings.titlePage = e.target.checked; else frontPages(S.doc)[k].include = e.target.checked;
-  metaChanged();
-});
+
 $('#titleview').addEventListener('input', e => {
   const pg = e.target.dataset.pg;
   if (pg) {
@@ -1234,7 +1230,7 @@ if (localStorage.getItem('scena:zoom')) S.zoom = +localStorage.getItem('scena:zo
 
 /* ================= MENUS & DIALOGS ================= */
 function exportMenu(anchor) {
-  openPop(anchor, mi('pdf', 'PDF', 'Ctrl+P') + mi('docx', 'Word (.docx)') + mi('fdx', 'Final Draft (.fdx)') + mi('fountain', 'Fountain (.fountain)') + '<hr>' + mi('scena', 'Scena file (.scena)', 'to move devices'), v => doExport(v), { align: 'right' });
+  openPop(anchor, mi('pdf', 'PDF…', 'Ctrl+P') + mi('docx', 'Word (.docx)…') + mi('fdx', 'Final Draft (.fdx)') + mi('fountain', 'Fountain (.fountain)') + '<hr>' + mi('scena', 'Scena file (.scena)', 'to move devices'), v => (v === 'pdf' || v === 'docx') ? exportDialog(v) : doExport(v), { align: 'right' });
 }
 function moreMenu(anchor) {
   const dark = document.body.classList.contains('dark');
@@ -1256,7 +1252,6 @@ function settingsDialog() {
       <div class="font-prev" id="f-prev">ΕΣΩΤ. ΚΟΥΖΙΝΑ - ΝΥΧΤΑ · INT. KITCHEN - NIGHT<br>Η Ελένη ανοίγει το παράθυρο. Eleni opens the window.</div>
       <label>Paper size<select id="f-paper">${Object.entries(PAPER).map(([k, p]) => `<option value="${k}" ${d.settings.paper === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>
       <label class="chk"><input type="checkbox" id="f-sn" ${d.settings.sceneNumbers ? 'checked' : ''}> Scene numbers</label>
-      <label class="chk"><input type="checkbox" id="f-tp" ${d.settings.titlePage ? 'checked' : ''}> Include the title page in exports</label>
       <hr>
       <p class="hint">Adapting this project? This creates a <b>new copy</b> as a ${other === 'stage' ? 'stage play' : 'screenplay'}; the original stays as it is.</p>
       <div><button class="btn" data-x="convert">Make a copy as ${other === 'stage' ? 'Stage Play' : 'Screenplay'}</button></div>
@@ -1269,7 +1264,7 @@ function settingsDialog() {
       if (x === 'convert') { closeModal(); await convertCopy(other); return; }
       if (x === 'ok') {
         d.settings.font = $('#f-font').value; d.settings.paper = $('#f-paper').value;
-        d.settings.sceneNumbers = $('#f-sn').checked; d.settings.titlePage = $('#f-tp').checked;
+        d.settings.sceneNumbers = $('#f-sn').checked;
         savePrefs({ font: d.settings.font, paper: d.settings.paper });
         applyFont(); applyZoom();
         if (S.view === 'title') renderTitleView();
@@ -1345,10 +1340,57 @@ function prepExport() {
   if (S.view === 'text') { [...editor.children].forEach(finalizeBlock); syncFromDOM(); }
   return safeName(S.doc.title);
 }
-async function exportPDF() {
+function exportSel() { const o = {}; exportParts(S.doc).forEach(p => { o[p.k] = p.on; }); return o; }
+/* Export dialog: tick what goes into the PDF / Word file (remembered per project) */
+function exportParts(d) {
+  const m = d.meta, P = frontPages(d);
+  const parts = [
+    ['title', 'Title page', true],
+    ...(d.format === 'stage' ? [['cast', 'Characters', !!m.cast.trim()]] : []),
+    ['note', 'Author’s note', hasFront(d, 'note')],
+    ['logline', 'Logline & tagline', hasFront(d, 'logline')],
+    ['synopsis', 'Synopsis', hasFront(d, 'synopsis')],
+    ['treatment', 'Treatment', hasFront(d, 'treatment')],
+    ['script', d.format === 'stage' ? 'Play' : 'Script', true]
+  ];
+  const saved = d.settings.export || { title: d.settings.titlePage !== false, cast: true, note: P.note.include !== false, logline: !!P.logline.include, synopsis: !!P.synopsis.include, treatment: !!P.treatment.include, script: true };
+  return parts.map(([k, label, has]) => ({ k, label, has, on: has && saved[k] !== false && (saved[k] || k === 'script' || k === 'title' || k === 'cast') }));
+}
+function exportDialog(kind) {
+  const parts = exportParts(S.doc);
+  showModal(`<h2>Export ${kind === 'pdf' ? 'PDF' : 'Word'}</h2>
+    <div class="form exp-list">${parts.map(p => `<label class="chk${p.has ? '' : ' off'}"><input type="checkbox" data-ex="${p.k}" ${p.on ? 'checked' : ''} ${p.has ? '' : 'disabled'}> ${p.label}${p.has ? '' : ' <span class="hint">— empty</span>'}</label>`).join('')}</div>
+    <div class="modal-actions"><button class="btn" data-x="no">Cancel</button><button class="btn dark" data-x="go">Export</button></div>`, box => {
+    const sync = () => { box.querySelector('[data-x="go"]').disabled = !box.querySelector('[data-ex]:checked'); };
+    box.addEventListener('change', sync); sync();
+    box.onclick = e => {
+      const x = e.target.closest('[data-x]')?.dataset.x; if (!x) return;
+      if (x === 'go') {
+        const sel = {}; $$('[data-ex]', box).forEach(c => { sel[c.dataset.ex] = c.checked; });
+        S.doc.settings.export = Object.assign(S.doc.settings.export || {}, Object.fromEntries(Object.entries(sel).filter(([k]) => parts.find(p => p.k === k).has)));
+        metaChanged();
+        closeModal(); doExport(kind, sel); return;
+      }
+      closeModal();
+    };
+  });
+}
+// a copy of the project with only the chosen parts
+function exportDoc(sel) {
+  const d = JSON.parse(JSON.stringify(S.doc));
+  if (!sel) return d;
+  const P = frontPages(d);
+  d.settings.titlePage = !!sel.title;
+  if (!sel.cast) d.meta.cast = '';
+  for (const k of ['note', 'logline', 'synopsis', 'treatment']) P[k].include = !!sel[k];
+  d._noScript = !sel.script;
+  return d;
+}
+async function exportPDF(sel) {
   const name = prepExport();
+  const doc = exportDoc(sel);
   if (document.fonts) await document.fonts.ready;
-  $('#print').innerHTML = buildPrintHTML(S.doc);
+  $('#print').innerHTML = buildPrintHTML(doc);
   if (Store.native) {
     const p = await Native.printPDF({ name: name + '.pdf', paper: S.doc.settings.paper });
     if (p) toast('Saved: ' + p, 4000);
@@ -1357,10 +1399,10 @@ async function exportPDF() {
     setTimeout(() => { window.print(); document.title = old; }, 60);
   }
 }
-async function doExport(kind) {
+async function doExport(kind, sel) {
   const name = prepExport();
-  if (kind === 'pdf') return exportPDF();
-  if (kind === 'docx') return deliver(name + '.docx', Formats.toDocx(S.doc), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
+  if (kind === 'pdf') return exportPDF(sel || exportSel());
+  if (kind === 'docx') return deliver(name + '.docx', Formats.toDocx(exportDoc(sel || exportSel())), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
   if (kind === 'fdx') return deliver(name + '.fdx', Formats.toFDX(S.doc), 'application/xml', 'fdx');
   if (kind === 'fountain') return deliver(name + '.fountain', Formats.toFountain(S.doc), 'text/plain;charset=utf-8', 'fountain');
   if (kind === 'scena') { await saveNow(); return deliver(name + '.scena', JSON.stringify(S.doc, null, 1), 'application/json', 'scena'); }
@@ -1440,7 +1482,7 @@ document.addEventListener('keydown', e => {
   const c = e.code;
   if (c === 'KeyF') { e.preventDefault(); openFind(); }
   else if (c === 'KeyS') { e.preventDefault(); S.dirty = true; saveNow().then(() => toast('Saved')); }
-  else if (c === 'KeyP') { e.preventDefault(); doExport('pdf'); }
+  else if (c === 'KeyP') { e.preventDefault(); exportDialog('pdf'); }
   else if (c === 'KeyZ' && !e.shiftKey && document.activeElement === editor) { e.preventDefault(); undo(); }
   else if (((c === 'KeyZ' && e.shiftKey) || c === 'KeyY') && document.activeElement === editor) { e.preventDefault(); redo(); }
   else if (c === 'Equal' || c === 'NumpadAdd') { e.preventDefault(); zoomBy(0.1); }

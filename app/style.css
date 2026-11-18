@@ -307,3 +307,8 @@ kbd { font-family: var(--ui); font-size: 11px; border: 1px solid var(--line); bo
 
 .cards-empty { grid-column: 1 / -1; max-width: 520px; margin: 50px auto; text-align: center; color: var(--dim); line-height: 1.6; }
 .cards-empty .ce-t { font-size: 16px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+.exp-list { gap: 4px; }
+.exp-list label.chk { padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); }
+.exp-list label.chk:has(input:checked) { border-color: var(--ink); }
+.exp-list label.off { opacity: .5; }
+.btn:disabled { opacity: .4; cursor: default; }

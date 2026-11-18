@@ -258,15 +258,16 @@ ${tp.join('\n')}
       });
       front.push(t);
     }
-    if (front.length) body += front.join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>') + `<w:p><w:pPr>${sect('', false)}</w:pPr></w:p>`;
+    if (doc._noScript) body += front.join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+    else if (front.length) body += front.join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>') + `<w:p><w:pPr>${sect('', false)}</w:pPr></w:p>`;
     let first = true;
-    for (const b of doc.blocks) {
+    for (const b of (doc._noScript ? [] : doc.blocks)) {
       const sp = typeSpec(fmt, b.t);
       let rr = runsOf(b); if (sp.upper) rr = mapRunsText(rr, greekCaps);
       body += `<w:p>${pPr(b.t, sp.pageBreak && !first ? '<w:pageBreakBefore/>' : '')}${rr.filter(r => r.t).map(r => run(r.t, sp, r)).join('')}</w:p>`;
       first = false;
     }
-    body += sect('<w:pgNumType w:start="1"/>', true);
+    body += doc._noScript ? sect('', false) : sect('<w:pgNumType w:start="1"/>', true);
 
     const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
     const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>${body}</w:body></w:document>`;
