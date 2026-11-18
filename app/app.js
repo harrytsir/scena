@@ -1068,15 +1068,14 @@ function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.max(t.scro
 // Title & notes live in the sidebar, above Scenes / Characters / Notes
 function renderSidePages() {
   if (!S.doc) return;
-  const d = S.doc, open = localStorage.getItem('scena:pages') !== '0';
+  const d = S.doc;
   const items = Object.entries(FRONT).filter(([, f]) => !f.stage || d.format === 'stage').map(([k, f]) => {
     const has = k === 'title' ? !!d.title : k === 'cast' ? !!d.meta.cast.trim() : hasFront(d, k);
     return `<button class="sp-i ${S.view === 'title' && S.front === k ? 'on' : ''}" data-front="${k}"><span>${f.label}</span>${has ? '<i class="dot"></i>' : ''}</button>`;
   }).join('');
-  $('#side-pages').innerHTML = `<button class="sp-h" data-sp-toggle><span>Title &amp; notes</span>${icon(open ? 'down' : 'right')}</button>${open ? `<div class="sp-list">${items}</div>` : ''}`;
+  $('#side-pages').innerHTML = `<div class="sp-list">${items}</div>`;
 }
 $('#side-pages').addEventListener('click', e => {
-  if (e.target.closest('[data-sp-toggle]')) { localStorage.setItem('scena:pages', localStorage.getItem('scena:pages') === '0' ? '1' : '0'); renderSidePages(); return; }
   const b = e.target.closest('[data-front]'); if (!b) return;
   S.front = b.dataset.front;
   if (S.view === 'title') renderTitleView(); else setView('title');
@@ -1282,7 +1281,10 @@ function setView(v) {
   S.view = v;
   document.body.classList.toggle('view-cards', v === 'cards' || v === 'prod');
   document.body.classList.toggle('view-title', v === 'title');
-  $$('#view-seg button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  $$('#side-views button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  $('#sv-text').classList.toggle('hidden', v !== 'text');
+  $('#side-pages').classList.toggle('hidden', v !== 'title');
+  $('#sv-prod').classList.toggle('hidden', v !== 'prod');
   $('#sheet-wrap').classList.toggle('hidden', v !== 'text');
   $('#cards').classList.toggle('hidden', v !== 'cards');
   $('#titleview').classList.toggle('hidden', v !== 'title');
@@ -1292,11 +1294,11 @@ function setView(v) {
   if (v === 'title') renderTitleView();
   if (v === 'prod') renderProd();
   S.front = S.front || 'title';
-  if (v === 'title' && innerWidth >= 1000) $('#side').classList.add('open');
+  if (v !== 'text' && innerWidth >= 1000) $('#side').classList.add('open');
   if (v === 'text') { editor.focus(); layoutPages(); }
   renderSidePages();
 }
-$('#view-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
+$('#side-views').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.view !== S.view) setView(b.dataset.view); });
 
 /* ================= FIND ================= */
 function openFind() {

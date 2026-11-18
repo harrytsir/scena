@@ -389,3 +389,16 @@ body.dark .notepop { background: #2a2414; border-color: #5b4a0c; }
 .sp-i.on { background: var(--sel); color: var(--ink); }
 .sp-i .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
 .fv-main { padding-top: 26px; }
+
+/* sidebar views */
+.side-views { display: flex; gap: 2px; margin: 10px 10px 4px; padding: 3px; background: var(--hover); border-radius: 9px; }
+.side-views button { flex: 1; border: 0; background: transparent; padding: 6px 4px; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--dim); white-space: nowrap; }
+.side-views button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+body.dark .side-views button.on { background: #2c2c31; }
+.sv { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.sv.hidden { display: none !important; }
+#sv-text .side-tabs { padding-top: 6px; }
+#side-pages, #sv-prod { padding: 6px 8px 20px; }
+#sv-prod .pv-nav-h:first-child { padding-top: 4px; }
+.side { width: 260px; }
+.pv-main { max-width: none; }

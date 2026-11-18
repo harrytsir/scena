@@ -47,10 +47,6 @@
       <button class="ib" data-act="tag-menu" title="Tag for production"><i data-ic="tag"></i></button>
     </div>
     <div class="tb-right">
-      <div class="seg" id="view-seg">
-        <button data-view="text" class="on">Script</button>
-        <button data-view="prod">Production</button>
-      </div>
       <button class="ib" data-act="undo" title="Undo (Ctrl+Z)"><i data-ic="undo"></i></button>
       <button class="ib" data-act="redo" title="Redo (Ctrl+Y)"><i data-ic="redo"></i></button>
       <button class="ib" data-act="find" title="Find (Ctrl+F)"><i data-ic="search"></i></button>
@@ -61,15 +57,23 @@
 
   <div class="work">
     <aside id="side" class="side">
-      <div id="side-pages" class="side-pages"></div>
-      <div class="side-tabs" id="side-seg">
-        <button data-side="scenes" class="on">Scenes</button>
-        <button data-side="chars">Characters</button>
-        <button data-side="notes">Notes</button>
+      <div class="side-views" id="side-views">
+        <button data-view="text" class="on">Script</button>
+        <button data-view="title">Title &amp; notes</button>
+        <button data-view="prod">Production</button>
       </div>
-      <div id="side-scenes" class="side-list"></div>
-      <div id="side-chars" class="side-list hidden"></div>
-      <div id="side-notes" class="side-list hidden"></div>
+      <div id="sv-text" class="sv">
+        <div class="side-tabs" id="side-seg">
+          <button data-side="scenes" class="on">Scenes</button>
+          <button data-side="chars">Characters</button>
+          <button data-side="notes">Notes</button>
+        </div>
+        <div id="side-scenes" class="side-list"></div>
+        <div id="side-chars" class="side-list hidden"></div>
+        <div id="side-notes" class="side-list hidden"></div>
+      </div>
+      <div id="side-pages" class="sv side-list hidden"></div>
+      <div id="sv-prod" class="sv side-list hidden"></div>
     </aside>
 
     <main id="scroller" class="scroller">

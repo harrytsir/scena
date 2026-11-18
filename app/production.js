@@ -191,7 +191,8 @@ function renderProd() {
       return `<button class="pv-u ${P.sec === t ? 'on' : ''}" data-sec="${t}"><span class="tx">${label}</span><span class="n">${n || ''}</span></button>`;
     }).join('') : ''}`;
   const main = CUE_TYPES[P.sec] ? cuesHTML(d, P.sec) : sheetHTML(d, units, P.unit, unitWord);
-  view.innerHTML = `<div class="pv"><nav class="pv-nav">${nav}</nav><div class="pv-main">
+  $('#sv-prod').innerHTML = nav;
+  view.innerHTML = `<div class="pv"><div class="pv-main">
     <div class="pv-bar"><span class="hint">Tag words in the script: select them, right click › Tag for production. Export from the Export menu.</span></div>
     ${main}</div></div>`;
 }
@@ -260,10 +261,14 @@ function cuesHTML(d, type) {
     : `<p class="hint">Nothing yet. In the play, select the words where it happens and right click › Tag for production › ${prodCats(d)[Object.keys(prodCats(d)).find(k => prodCats(d)[k].cue === type)].label}.</p>`}</div>`;
 }
 
+$('#sv-prod').addEventListener('click', e => {
+  const t = e.target;
+  const u = t.closest('[data-unit]'); if (u) { S.prod = { sec: 'sheets', unit: +u.dataset.unit }; renderProd(); }
+  const sc = t.closest('[data-sec]'); if (sc) { S.prod.sec = sc.dataset.sec; renderProd(); }
+  if ((u || sc) && innerWidth < 1000) $('#side').classList.remove('open');
+});
 $('#prodview').addEventListener('click', e => {
   const t = e.target;
-  const u = t.closest('[data-unit]'); if (u) { S.prod = { sec: 'sheets', unit: +u.dataset.unit }; renderProd(); return; }
-  const sc = t.closest('[data-sec]'); if (sc) { S.prod.sec = sc.dataset.sec; renderProd(); return; }
   if (t.closest('.cue-n')) return;
   const st = t.closest('[data-step]'); if (st) { S.prod.unit += +st.dataset.step; renderProd(); return; }
   const rm = t.closest('[data-rm]');
