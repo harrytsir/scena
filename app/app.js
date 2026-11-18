@@ -410,7 +410,6 @@ function finalizeBlock(el) {
   const t = el.dataset.t, sp = spec(t);
   const runs = domToRuns(el);
   let nr = runs;
-  if (sp.upper) nr = mapRunsText(runs, greekCaps);
   const txt = nr.map(r => r.t).join('').trim();
   if (t === 'paren' && txt && !txt.startsWith('(')) nr = [{ t: '(' }, ...nr, { t: ')' }];
   if (JSON.stringify(normRuns(nr)) !== JSON.stringify(runs)) { setRuns(el, nr); return true; }
@@ -429,7 +428,6 @@ function setType(el, t) {
     off = Math.max(0, Math.min(off - a - 1, b - a - 1));
   }
   if (t === 'paren' && !text.trim().startsWith('(')) { runs = [{ t: '(' }, ...runs, { t: ')' }]; off += 1; }
-  if (spec(t).upper) runs = mapRunsText(runs, greekCaps);
   el.className = 'b t-' + t; el.dataset.t = t;
   setRuns(el, runs);
   if (here) setCaret(el, Math.min(off, elText(el).length));
@@ -463,6 +461,39 @@ function tabCmd(back) {
   S.tabEl = el;
 }
 
+// Shift+F3 like Word: UPPER → lower → Sentence case, on the selection or the whole line
+function changeCase() {
+  const sel = getSelection(); if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  const a = blockOf(r.startContainer), z = blockOf(r.endContainer);
+  if (!a || !z) return;
+  commitNow();
+  const els = []; for (let el = a; el; el = el.nextElementSibling) { els.push(el); if (el === z) break; }
+  const whole = r.collapsed;
+  const offs = els.map((el) => {
+    const len = elText(el).length;
+    let s0 = 0, s1 = len;
+    if (!whole && el === a) { const pr = document.createRange(); pr.selectNodeContents(el); pr.setEnd(r.startContainer, r.startOffset); s0 = pr.toString().length; }
+    if (!whole && el === z) { const pr = document.createRange(); pr.selectNodeContents(el); pr.setEnd(r.endContainer, r.endOffset); s1 = pr.toString().length; }
+    return [s0, s1];
+  });
+  const sample = els.map((el, k) => elText(el).slice(offs[k][0], offs[k][1])).join(' ');
+  const isUp = sample === sample.toUpperCase() && sample !== sample.toLowerCase();
+  const isLow = sample === sample.toLowerCase();
+  const mode = isUp ? 'lower' : isLow ? 'sentence' : 'upper';
+  const sentence = (t, startCap) => { let cap = startCap, out = ''; for (const ch of t.toLowerCase()) { if (cap && /\p{L}/u.test(ch)) { out += ch.toUpperCase(); cap = false; } else { out += ch; if (/[.!?;…]/.test(ch)) cap = true; } } return out; };
+  els.forEach((el, k) => {
+    const runs = domToRuns(el), [s0, s1] = offs[k];
+    const mid = sliceRuns(runs, s0, s1);
+    const startCap = s0 === 0 || /[.!?;…]\s*$/.test(elText(el).slice(0, s0));
+    let first = true;
+    const conv = mid.map(x => { const t = mode === 'upper' ? x.t.toUpperCase() : mode === 'lower' ? x.t.toLowerCase() : sentence(x.t, first && startCap); if (/\p{L}/u.test(x.t)) first = false; return { ...x, t }; });
+    setRuns(el, [...sliceRuns(runs, 0, s0), ...conv, ...sliceRuns(runs, s1, elText(el).length)]);
+  });
+  if (whole) setCaret(a, offs[0][1]); else { const last = els[els.length - 1]; const [n1, o1] = pointAt(a, offs[0][0]), [n2, o2] = pointAt(last, offs[offs.length - 1][1]); const rr = document.createRange(); rr.setStart(n1, o1); rr.setEnd(n2, o2); sel.removeAllRanges(); sel.addRange(rr); }
+  syncFromDOM(); commitNow(); docChanged(false); layoutPages();
+}
+
 /* ================= ENTER / BACKSPACE ================= */
 function doEnter() {
   let ci = caretInfo(); if (!ci) return;
@@ -484,7 +515,7 @@ function doEnter() {
   const nb = makeBlockEl({ id: uid(), t, text: '' });
   if (after.length) {
     let ar = after; const s = ar[0].t.replace(/^\s+/, ''); ar = [{ ...ar[0], t: s }, ...ar.slice(1)];
-    setRuns(nb, spec(t).upper ? mapRunsText(ar, greekCaps) : ar);
+    setRuns(nb, ar);
   }
   el.after(nb);
   setCaret(nb, 0);
@@ -546,6 +577,7 @@ editor.addEventListener('keydown', e => {
     if (e.key === 'Enter' && S.ac.sel >= 0) { e.preventDefault(); acceptAC(); return; }
   }
   if (e.key === 'Tab' && !mod && !e.altKey) { e.preventDefault(); tabCmd(e.shiftKey); return; }
+  if (e.key === 'F3' && e.shiftKey) { e.preventDefault(); changeCase(); return; }
   if (mod && !e.altKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
     const k = e.code.slice(5);
     const t = Object.keys(F().types).find(x => F().types[x].key === k);
@@ -1145,6 +1177,7 @@ function helpDialog() {
       <tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Change the element. On a new empty line, Tab first picks what usually comes next (Character → Dialogue), then cycles.</td></tr>
       <tr><td>${keys.map(k => `<kbd>Ctrl+${T[k].key}</kbd>`).join(' ')}</td><td>${keys.map(k => T[k].label).join(' · ')}</td></tr>
       <tr><td><kbd>Ctrl+B</kbd> <kbd>Ctrl+I</kbd> <kbd>Ctrl+U</kbd></td><td>Bold, italic, underline</td></tr>
+      <tr><td><kbd>Shift+F3</kbd></td><td>Change case of the selection or line: UPPER → lower → Sentence</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a suggestion (characters, locations, time of day)</td></tr>
       <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo</td></tr>
       <tr><td><kbd>Ctrl+F</kbd></td><td>Find &amp; replace</td></tr>
