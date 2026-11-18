@@ -137,7 +137,7 @@ function wrapRanges(text, maxPx, measure) {
     let lastFit = -1, j = i;
     while (j <= n) {
       if (j === n || text[j] === ' ') {
-        if (measure(text.slice(i, j)) <= maxPx + 0.5) lastFit = j; else break;
+        if (measure(text.slice(i, j)) <= maxPx + 0.01) lastFit = j; else break;
         if (j === n) break;
       }
       j++;
@@ -207,62 +207,24 @@ function paginate(doc) {
   const cs = typeSpec(fmt, 'character');
   const moreLine = () => ({ runs: plainRuns(W.more), t: 'character', ind: cs.ind, w: blockWidthIn(cs, g.textW), align: cs.align });
 
-  let i = 0;
-  while (i < blocks.length) {
-    const b = blocks[i];
-    const spec = typeSpec(fmt, b.t);
-    if (spec.pageBreak && used > 0) newPage();
-
-    if (b.t === 'character') {
-      let j = i + 1;
-      while (j < blocks.length && (blocks[j].t === 'paren' || blocks[j].t === 'dialogue')) j++;
-      const body = [];
-      for (let k = i + 1; k < j; k++) for (const l of mkLines(blocks[k])) body.push(Object.assign(l, { bi: k }));
-      const head = mkLines(b);
-      for (let k = i; k < j; k++) blockPage[k] = pages.length;
-      const sb = sbOf(b.t);
-      if (used + sb + head.length + body.length <= L) { put(head.concat(body), sb); i = j; continue; }
-
-      const avail = L - used - sb - head.length - 1;
-      let cut = Math.min(avail, body.length - 2);
-      while (cut >= 2 && body[cut - 1].t === 'paren') cut--;
-      const contHead = mkLines(b, displayRuns(b, spec).concat([{ t: W.cont }]));
-      if (body.length >= 4 && cut >= 2 && used > 0) {
-        put(head.concat(body.slice(0, cut), [moreLine()]), sb);
-        newPage();
-        let chunk = contHead.concat(body.slice(cut));
-        while (chunk.length > L) { put(chunk.slice(0, L - 1).concat([moreLine()]), 0); newPage(); chunk = contHead.concat(chunk.slice(L - 1)); }
-        const firstCut = new Set(body.slice(0, cut).map(l => l.bi));
-        for (let k = i + 1; k < j; k++) if (!firstCut.has(k)) blockPage[k] = pages.length;
-        put(chunk, 0);
-      } else {
-        if (used > 0) newPage();
-        for (let k = i; k < j; k++) blockPage[k] = pages.length;
-        let chunk = head.concat(body);
-        while (chunk.length > L) { put(chunk.slice(0, L), 0); newPage(); chunk = chunk.slice(L); }
-        put(chunk, 0);
-      }
-      i = j;
-      continue;
+  // Same rules as the on-screen pages: elements are never split; a heading, character or
+  // parenthetical moves to the next page together with what follows it.
+  const all = blocks.map(b => mkLines(b));
+  all.forEach((ls, k) => { if (blocks[k].t === 'scene') { sceneCount++; ls[0].sn = sceneCount; } });
+  const sbAt = (k) => typeSpec(fmt, blocks[k].t).sb;
+  for (let k = 0; k < blocks.length; k++) {
+    const spec = typeSpec(fmt, blocks[k].t);
+    let lines = all[k];
+    let need = (used === 0 ? 0 : spec.sb) + lines.length;
+    if (spec.keep) { let j = k + 1; while (j < blocks.length) { need += sbAt(j) + all[j].length; if (!typeSpec(fmt, blocks[j].t).keep) break; j++; } need = Math.min(need, L); }
+    if (used > 0 && ((spec.pageBreak && k > 0) || used + need > L)) newPage();
+    blockPage[k] = pages.length;
+    let sb = sbOf(blocks[k].t);
+    while (used + sb + lines.length > L && lines.length > L - used - sb) {   // longer than a whole page
+      const fit = Math.max(1, L - used - sb);
+      put(lines.slice(0, fit), sb); lines = lines.slice(fit); newPage(); sb = 0;
     }
-
-    let lines = mkLines(b);
-    if (b.t === 'scene') { sceneCount++; lines[0].sn = sceneCount; }
-    let sb = sbOf(b.t);
-    if (spec.keep && i + 1 < blocks.length) {
-      const nx = blocks[i + 1];
-      const need = Math.min(2, mkLines(nx).length) + typeSpec(fmt, nx.t).sb + (nx.t === 'character' ? 2 : 0);
-      if (used > 0 && used + sb + lines.length + need > L) { newPage(); sb = 0; }
-    }
-    blockPage[i] = pages.length;
-    if (used + sb + lines.length <= L) { put(lines, sb); i++; continue; }
-    const avail = L - used - sb;
-    if ((b.t === 'action' || b.t === 'direction' || b.t === 'text') && avail >= 2 && lines.length - avail >= 2) {
-      put(lines.slice(0, avail), sb); lines = lines.slice(avail); newPage();
-    } else if (used > 0) newPage();
-    while (lines.length > L) { put(lines.slice(0, L), 0); newPage(); lines = lines.slice(L); }
-    put(lines, 0);
-    i++;
+    put(lines, sb);
   }
   if (pages.length > 1 && pages[pages.length - 1].length === 0) pages.pop();
   return { pages, blockPage, geom: g };

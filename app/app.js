@@ -358,6 +358,7 @@ function restore(snap) {
   renderEditor();
   const el = editor.children[Math.min(snap.caret.i, editor.children.length - 1)];
   setCaret(el, Math.min(snap.caret.off, elText(el).length));
+  layoutPages();
   scrollToCaret(el);
   docChanged(false);
 }
@@ -491,6 +492,7 @@ function doEnter() {
 }
 function afterStructural(el) {
   syncFromDOM(); commitNow(); docChanged(false);
+  layoutPages();
   scrollToCaret(el); S.lastBlock = el; S.tabEl = null;
   updateToolbar(); updateAC();
 }
@@ -534,7 +536,7 @@ editor.addEventListener('beforeinput', e => {
     if (ci && ci.collapsed && ci.el.dataset.t === 'paren' && elText(ci.el)[ci.off] === ')') { e.preventDefault(); setCaret(ci.el, ci.off + 1); }
   }
 });
-editor.addEventListener('input', () => { syncFromDOM(); docChanged(true); updateAC(); updateToolbar(); });
+editor.addEventListener('input', () => { syncFromDOM(); docChanged(true); layoutSoon(); updateAC(); updateToolbar(); });
 editor.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey;
   if (S.ac.open) {
@@ -784,23 +786,64 @@ function refreshNow() {
   if (!S.doc) return;
   if (S.view === 'text') syncFromDOM();
   S.pg = paginate(S.doc);
-  const bp = S.pg.blockPage, nums = !!S.doc.settings.sceneNumbers;
+  const nums = !!S.doc.settings.sceneNumbers;
   let sc = 0;
-  [...editor.children].forEach((el, i) => {
-    const p = bp[i];
-    if (i > 0 && p !== bp[i - 1]) { if (el.dataset.pb !== p + '.') el.dataset.pb = p + '.'; }
-    else if (el.dataset.pb) delete el.dataset.pb;
+  [...editor.children].forEach((el) => {
     if (el.dataset.t === 'scene') { sc++; if (nums) el.dataset.sn = sc; else delete el.dataset.sn; }
     else if (el.dataset.sn) delete el.dataset.sn;
   });
+  if (S.view === 'text') layoutPages();
   renderSide(); renderStatus();
   if (S.view === 'cards') renderCards();
 }
+/* Pages like Word: measure the real text and push whatever doesn't fit to the next sheet */
+const PAGE_GAP = 28;
+function layoutPages() {
+  if (!S.doc || S.view !== 'text') return;
+  const paper = PAPER[S.doc.settings.paper] || PAPER.A4;
+  const IN = 96, pageH = paper.h * IN, top = MARGIN.top * IN, bot = MARGIN.bottom * IN;
+  const contentH = pageH - top - bot, line = 16;
+  const els = [...editor.children];
+  for (const el of els) if (el.style.marginTop) el.style.marginTop = '';
+  const h = els.map(el => el.offsetHeight);
+  const sbOf = (el) => (typeSpec(S.doc.format, el.dataset.t).sb || 0) * line;
+  const keep = (el) => typeSpec(S.doc.format, el.dataset.t).keep;
+  const pageOf = new Array(els.length);
+  const moves = [];
+  let y = 0, page = 1;
+  for (let i = 0; i < els.length; i++) {
+    const el = els[i];
+    const sp = y === 0 ? 0 : sbOf(el);
+    let need = sp + h[i];
+    // a heading / character / parenthetical goes together with everything up to the next normal element
+    if (keep(el)) { let j = i + 1; while (j < els.length) { need += sbOf(els[j]) + h[j]; if (!keep(els[j])) break; j++; } need = Math.min(need, contentH); }
+    const forced = typeSpec(S.doc.format, el.dataset.t).pageBreak && i > 0 && y > 0;
+    if (y > 0 && (forced || y + need > contentH)) {
+      moves.push([el, contentH - y + bot + PAGE_GAP + top]);
+      page++; y = h[i];
+    } else y += sp + h[i];
+    pageOf[i] = page;
+  }
+  for (const [el, mt] of moves) el.style.marginTop = mt + 'px';
+  S.domPages = { pageOf, count: page };
+  // sheets behind the text
+  const bg = $('#pagebg');
+  let html = '';
+  for (let p = 1; p <= page; p++) html += `<div class="pg" style="top:${(p - 1) * (pageH + PAGE_GAP)}px;height:${pageH}px">${p > 1 ? `<span class="no">${p}.</span>` : ''}</div>`;
+  if (bg._html !== html) { bg.innerHTML = html; bg._html = html; }
+  const sh = $('#sheet');
+  sh.style.height = (page * pageH + (page - 1) * PAGE_GAP) + 'px';
+  sh.style.minHeight = '';
+}
+let _lpRaf = 0;
+function layoutSoon() { if (_lpRaf) return; _lpRaf = requestAnimationFrame(() => { _lpRaf = 0; layoutPages(); }); }
+
 function renderStatus() {
   if (!S.doc || !S.pg) return;
   const ci = caretInfo();
   const i = ci ? blockIndex(ci.el) : 0;
-  const cur = S.pg.blockPage[i] || 1, tot = S.pg.pages.length;
+  const dp = S.view === 'text' && S.domPages;
+  const cur = (dp ? dp.pageOf[i] : S.pg.blockPage[i]) || 1, tot = dp ? dp.count : S.pg.pages.length;
   const words = S.doc.blocks.reduce((n, b) => n + (b.text.trim() ? b.text.trim().split(/\s+/).length : 0), 0);
   const scenes = S.doc.blocks.filter(b => b.t === 'scene').length;
   const acts = S.doc.blocks.filter(b => b.t === 'act').length;
@@ -811,7 +854,7 @@ function renderStatus() {
   $('#status').textContent = s;
 }
 function renderSide() {
-  const list = sceneList(S.doc), bp = S.pg ? S.pg.blockPage : [];
+  const list = sceneList(S.doc), bp = (S.domPages && S.domPages.pageOf) || (S.pg ? S.pg.blockPage : []);
   $('#side-scenes').innerHTML = list.length ? list.map(x => x.kind === 'act'
     ? `<div class="side-act" data-i="${x.i}">${escHTML(x.text)}</div>`
     : `<div class="side-item" data-i="${x.i}"><span class="n">${S.doc.format === 'stage' ? x.numInAct : x.num}</span><span class="tx">${escHTML(x.text)}</span><span class="pg">${bp[x.i] || ''}</span></div>`).join('')
@@ -886,6 +929,7 @@ function moveRange(start, end, insertAt) {
   S.doc.blocks = rest;
 }
 function afterMove() { renderEditor(); commitNow(); docChanged(false); refreshNow(); }
+if (document.fonts) document.fonts.addEventListener('loadingdone', () => layoutPages());
 function moveUnit(k, dir) {
   const us = units(), u = us[k], o = us[k + dir];
   if (!u || !o) return;
@@ -956,7 +1000,7 @@ function setView(v) {
   closeAC(); closePop();
   if (v === 'cards') { S.pg = paginate(S.doc); renderCards(); }
   if (v === 'title') renderTitleView();
-  if (v === 'text') { editor.focus(); }
+  if (v === 'text') { editor.focus(); layoutPages(); }
 }
 $('#view-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
 
@@ -1008,7 +1052,7 @@ function replaceAll() {
 function applyZoom() {
   const paper = PAPER[S.doc.settings.paper] || PAPER.A4;
   const sh = $('#sheet');
-  sh.style.width = paper.w + 'in'; sh.style.minHeight = paper.h + 'in';
+  sh.style.width = paper.w + 'in';
   document.documentElement.style.setProperty('--sheetw', paper.w + 'in');
   let z = S.zoom;
   if (z == null) {

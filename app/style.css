@@ -164,13 +164,13 @@ body[data-format="stage"] .t-scene { --hint: 'Scene'; }
   content: var(--hint); position: absolute; left: 0; right: 0; top: 0; color: var(--pb);
   pointer-events: none; text-transform: none; font-style: italic; text-decoration: none; font-weight: 400;
 }
-.editor .b[data-pb]::before {
-  content: attr(data-pb);
-  position: absolute; left: calc(-1.5in - var(--ind, 0in)); width: var(--sheetw, 8.27in);
-  top: calc(var(--sb, 1) * -6pt - 1px); border-top: 1px dashed var(--pb);
-  font: 10px/1 var(--ui); color: var(--faint); text-align: right; text-transform: none; font-style: normal; text-decoration: none; font-weight: 400;
-  padding: 3px 0.35in 0 0; pointer-events: none; box-sizing: border-box;
-}
+/* Word-like pages: white sheets behind the text, gap between them */
+.sheet.pages { background: transparent; box-shadow: none; }
+.pagebg { position: absolute; left: 0; top: 0; right: 0; z-index: 0; pointer-events: none; }
+.pagebg .pg { position: absolute; left: 0; right: 0; background: var(--sheet); box-shadow: var(--shadow); }
+.pagebg .pg .no { position: absolute; top: 0.5in; right: 1in; font-family: var(--script-font); font-size: 12pt; line-height: 12pt; color: var(--sheet-ink); }
+.sheet.pages .editor { position: relative; z-index: 1; }
+
 .editor .b[data-sn]::after { content: attr(data-sn); position: absolute; left: -0.8in; top: 0; color: var(--faint); font-weight: 400; }
 
 /* ---------- Title page view ---------- */
