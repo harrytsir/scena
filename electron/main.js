@@ -7,7 +7,7 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.join(__dirname, '..');
 const APP_DIR = path.join(ROOT, 'app');
-const UPD = 'https://raw.githubusercontent.com/harrytsir/scena/main/';
+const UPD = process.env.SCENA_UPD || 'https://raw.githubusercontent.com/harrytsir/scena/main/';
 const SC = global.__scena || {
   root: ROOT, vdir: path.join(app.getPath('userData'), 'versions'),
   version: JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version,

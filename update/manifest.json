@@ -1,11 +1,11 @@
 {
  "version": "1.1.0",
  "notes": "New look, English interface, font choice, title page, bold/italic/underline, Enter/Tab like Word",
- "date": "2026-11-18T11:19:56.389Z",
+ "date": "2026-11-18T11:20:23.139Z",
  "files": {
   "package.json": "066f3484ad6e6a0a93c263127d53c5a2896da830e2df29d67c4beb21f5ae8934",
   "electron/boot.js": "521cfb6d23cb77eae2bf7e427768c09fbe44061e962b5604d56853a9becb1c43",
-  "electron/main.js": "87932ad6aca26540dfe8b70fbcdc59f1acdb0cc9914b129f552aebea2b0025ab",
+  "electron/main.js": "5303650d7326d61bb7990b067150b1a943c3baaff5231ef97b74912ee2823386",
   "electron/preload.js": "3d53e9958ee96945361c89ef2c9ff4bcc422abb339be43fa3c7d57a9b967b7ad",
   "app/app.js": "20f293fc06eebfba858705ad3111abe2a40c01ea8e2a3ad0a56ddd4c99179765",
   "app/fonts/LICENSE-Liberation.txt": "f32df582a2aab128c07b2f7e36e7b928dc5f6bd82657b905c04f91459f9e5cf9",
