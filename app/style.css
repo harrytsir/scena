@@ -374,3 +374,7 @@ body.dark .notepop { background: #2a2414; border-color: #5b4a0c; }
 .bd-g .bh { font-weight: 700; font-size: 8pt; padding: 3pt 5pt; border-bottom: 1px solid #555; text-transform: uppercase; }
 .bd-g td.box > div:not(.bh) { padding: 1pt 5pt; }
 .bd-l th { background: #e4e4e7; font-size: 8pt; text-transform: uppercase; }
+.cue-n { width: 100%; border: 1px solid transparent; background: transparent; padding: 3px 6px; font-size: 12px; box-shadow: none !important; }
+.cue-n:hover { border-color: var(--line); } .cue-n:focus { border-color: var(--accent); background: var(--panel); }
+.cue-t td[data-gob] { cursor: pointer; }
+.bd-sub { text-align: center; margin: -6pt 0 10pt; color: #444; }

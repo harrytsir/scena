@@ -179,18 +179,18 @@ function renderProd() {
   const units = prodUnits(d);
   const P = S.prod; if (P.unit >= units.length) P.unit = 0;
   const unitWord = d.format === 'stage' && !d.blocks.some(b => b.t === 'scene') ? 'Act' : 'Scene';
+  if (P.sec !== 'sheets' && !(d.format === 'stage' && CUE_TYPES[P.sec])) P.sec = 'sheets';
+  const cues = d.format === 'stage' ? cueList(d) : [];
   const nav = `
-    <div class="pv-nav-h">Breakdown sheets</div>
+    <div class="pv-nav-h">Breakdown</div>
     ${units.map((u, i) => `<button class="pv-u ${P.sec === 'sheets' && P.unit === i ? 'on' : ''}" data-unit="${i}"><span class="n">${u.num || '–'}</span><span class="tx">${escHTML(u.heading)}</span></button>`).join('')}
-    <div class="pv-nav-h">Reports</div>
-    <button class="pv-u ${P.sec === 'lists' ? 'on' : ''}" data-sec="lists"><span class="tx">Elements by category</span></button>
-    ${d.format === 'stage' ? `<button class="pv-u ${P.sec === 'cues' ? 'on' : ''}" data-sec="cues"><span class="tx">Cue sheet</span></button>` : ''}`;
-  let main = '';
-  if (P.sec === 'lists') main = listsHTML(d, units);
-  else if (P.sec === 'cues') main = cuesHTML(d);
-  else main = sheetHTML(d, units, P.unit, unitWord);
+    ${d.format === 'stage' ? `<div class="pv-nav-h">Cue sheets</div>` + Object.entries(CUE_TYPES).map(([t, label]) => {
+      const n = cues.filter(c => c.type === t).length;
+      return `<button class="pv-u ${P.sec === t ? 'on' : ''}" data-sec="${t}"><span class="tx">${label}</span><span class="n">${n || ''}</span></button>`;
+    }).join('') : ''}`;
+  const main = CUE_TYPES[P.sec] ? cuesHTML(d, P.sec) : sheetHTML(d, units, P.unit, unitWord);
   view.innerHTML = `<div class="pv"><nav class="pv-nav">${nav}</nav><div class="pv-main">
-    <div class="pv-bar"><span class="hint">Tag words in the script: select them, right click › Tag for production.</span><span class="sp"></span>
+    <div class="pv-bar"><span class="hint">${CUE_TYPES[P.sec] ? 'Export gives only this cue sheet.' : 'Tag words in the script: select them, right click › Tag for production.'}</span><span class="sp"></span>
       <button class="btn small" data-pexp="pdf">${icon('download')}PDF</button><button class="btn small" data-pexp="xlsx">${icon('download')}Excel</button></div>
     ${main}</div></div>`;
 }
@@ -235,54 +235,35 @@ function sheetHTML(d, units, ui, unitWord) {
     <div class="bs-grid">${boxes}</div>
   </div>`;
 }
-function elementsByCat(d, units) {
-  const cats = prodCats(d), out = {};
-  for (const k of Object.keys(cats)) out[k] = new Map();
-  units.forEach((u, ui) => {
-    const { box } = unitData(d, u);
-    for (const [k, m] of Object.entries(box)) for (const [key, e] of m) {
-      const x = out[k].get(key) || { name: e.name, scenes: [], count: 0 };
-      x.scenes.push(u.num || '–'); x.count += e.count; out[k].set(key, x);
-    }
-  });
-  return out;
-}
-function listsHTML(d, units) {
-  const cats = prodCats(d), all = elementsByCat(d, units);
-  const sw = d.format === 'stage' && !d.blocks.some(b => b.t === 'scene') ? 'Acts' : 'Scenes';
-  const cards = Object.entries(cats).map(([k, c]) => {
-    const items = [...all[k].values()].sort((a, b) => a.name.localeCompare(b.name, 'el'));
-    return `<div class="pl-card" style="--cc:${c.color}"><div class="bs-bh">${c.label} <span class="cnt2">${items.length}</span></div>
-      ${items.length ? `<table><tr><th>Element</th><th>${sw}</th><th>×</th></tr>${items.map(e => `<tr><td>${escHTML(e.name)}</td><td>${e.scenes.join(', ')}</td><td>${e.count}</td></tr>`).join('')}</table>` : '<div class="side-empty">Nothing yet.</div>'}</div>`;
-  }).join('');
-  return `<div class="pl-grid">${cards}</div>`;
-}
+const CUE_TYPES = { LX: 'Lighting (LX)', SQ: 'Sound & music (SQ)', FX: 'Effects (FX)', SC: 'Set changes (SC)' };
 function cueList(d) {
   const cats = prodCats(d), pages = (S.domPages && S.domPages.pageOf) || paginate(d).blockPage;
-  const n = {}, out = [];
+  const n = {}, out = [], notes = d.cuenotes || {};
   for (const t of tagsIn(d)) {
     const c = cats[t.cat]; if (!c || !c.cue) continue;
     n[c.cue] = (n[c.cue] || 0) + 1;
-    // "standby / go on": the line it sits in; for a line of dialogue, who says it
+    // on a line of dialogue the cue goes with who says it
     const b = d.blocks[t.bi];
-    let on = b.text.trim();
-    if (b.t === 'dialogue' || b.t === 'paren') { for (let j = t.bi - 1; j >= 0; j--) if (d.blocks[j].t === 'character') { on = greekCaps(cleanCharName(d.blocks[j].text)) + ': ' + on; break; } }
-    out.push({ no: c.cue + ' ' + n[c.cue], type: c.cue, page: pages[t.bi] || 1, on: on.length > 90 ? on.slice(0, 88) + '…' : on, desc: t.text, bi: t.bi });
+    let who = '';
+    if (b.t === 'dialogue' || b.t === 'paren') { for (let j = t.bi - 1; j >= 0; j--) if (d.blocks[j].t === 'character') { who = greekCaps(cleanCharName(d.blocks[j].text)); break; } }
+    const key = b.id + ':' + t.key;
+    out.push({ no: c.cue + ' ' + n[c.cue], type: c.cue, page: pages[t.bi] || 1, desc: who ? `${who}: «${t.text}»` : t.text, note: notes[key] || '', key, bi: t.bi });
   }
   return out;
 }
-function cuesHTML(d) {
-  const cues = cueList(d);
-  return `<div class="bs"><div class="bs-top"><div class="bs-title">Cue Sheet</div></div>
-    ${cues.length ? `<table class="cue-t"><tr><th>Cue #</th><th>Type</th><th>Page</th><th>Standby / Go on</th><th>Description</th></tr>
-      ${cues.map(c => `<tr data-gob="${c.bi}"><td><b>${c.no}</b></td><td>${c.type}</td><td>${c.page}</td><td>${escHTML(c.on)}</td><td>${escHTML(c.desc)}</td></tr>`).join('')}</table>`
-    : `<p class="hint">Tag lighting, sound, effects or set changes in the play (right click › Tag for production) and they appear here in order, with their page and line.</p>`}</div>`;
+function cuesHTML(d, type) {
+  const cues = cueList(d).filter(c => c.type === type);
+  return `<div class="bs"><div class="bs-top"><div class="bs-title">Cue Sheet · ${CUE_TYPES[type]}</div></div>
+    ${cues.length ? `<table class="cue-t"><tr><th style="width:70px">Cue</th><th style="width:50px">Page</th><th>Description</th><th style="width:34%">Notes</th></tr>
+      ${cues.map(c => `<tr><td data-gob="${c.bi}"><b>${c.no}</b></td><td data-gob="${c.bi}">${c.page}</td><td data-gob="${c.bi}">${escHTML(c.desc)}</td><td><input class="cue-n" data-cuenote="${escHTML(c.key)}" value="${escHTML(c.note)}" placeholder="e.g. fade 5″"></td></tr>`).join('')}</table>`
+    : `<p class="hint">Nothing yet. In the play, select the words where it happens and right click › Tag for production › ${prodCats(d)[Object.keys(prodCats(d)).find(k => prodCats(d)[k].cue === type)].label}.</p>`}</div>`;
 }
 
 $('#prodview').addEventListener('click', e => {
   const t = e.target;
   const u = t.closest('[data-unit]'); if (u) { S.prod = { sec: 'sheets', unit: +u.dataset.unit }; renderProd(); return; }
   const sc = t.closest('[data-sec]'); if (sc) { S.prod.sec = sc.dataset.sec; renderProd(); return; }
+  if (t.closest('.cue-n')) return;
   const st = t.closest('[data-step]'); if (st) { S.prod.unit += +st.dataset.step; renderProd(); return; }
   const rm = t.closest('[data-rm]');
   if (rm) { const units = prodUnits(S.doc), id = units[S.prod.unit].id, m = bdStore(S.doc)[id] || {}; m[rm.dataset.rm] = (m[rm.dataset.rm] || []).filter(x => x !== rm.dataset.name); bdStore(S.doc)[id] = m; metaChanged(); renderProd(); return; }
@@ -302,6 +283,7 @@ $('#prodview').addEventListener('keydown', e => {
 $('#prodview').addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.desc) { S.doc.notes[t.dataset.desc] = t.value; metaChanged(); return; }
+  if (t.dataset.cuenote) { (S.doc.cuenotes = S.doc.cuenotes || {})[t.dataset.cuenote] = t.value; metaChanged(); return; }
   const hk = t.dataset.bdh;
   if (hk) {
     if (hk === 'company') { S.doc.meta.company = t.value; }
@@ -311,6 +293,13 @@ $('#prodview').addEventListener('input', e => {
 });
 
 /* ---------- export ---------- */
+function cuePrintHTML(d, type) {
+  const p = PAPER[d.settings.paper] || PAPER.A4, cues = cueList(d).filter(c => c.type === type);
+  return `<style>@page{size:${p.w}in ${p.h}in;margin:0}</style><div class="ppage bdp" style="width:${p.w}in;min-height:${p.h}in;height:auto">
+    <div class="bd-t">CUE SHEET · ${CUE_TYPES[type].toUpperCase()}</div><div class="bd-sub">${escHTML(d.title)}</div>
+    <table class="bd-l"><tr><th style="width:12%">Cue</th><th style="width:8%">Page</th><th>Description</th><th style="width:32%">Notes</th></tr>
+    ${cues.map(c => `<tr><td><b>${c.no}</b></td><td>${c.page}</td><td>${escHTML(c.desc)}</td><td>${escHTML(c.note)}</td></tr>`).join('')}</table></div>`;
+}
 function prodPrintHTML(d) {
   const units = prodUnits(d), cats = prodCats(d), p = PAPER[d.settings.paper] || PAPER.A4;
   const lines = blockLines(d), L = pageGeom(d).lines;
@@ -343,19 +332,6 @@ function prodPrintHTML(d) {
       <table class="bd-h">${head}<tr><td colspan="4"><div class="l">Description</div><div class="v">${escHTML(d.notes[u.id] || '')}</div></td></tr></table>
       <table class="bd-g">${grid}</table>`);
   });
-  // element lists
-  const all = elementsByCat(d, units);
-  let rows = '';
-  for (const [k, c] of Object.entries(cats)) {
-    const items = [...all[k].values()].sort((a, b) => a.name.localeCompare(b.name, 'el'));
-    if (!items.length) continue;
-    rows += `<tr><th colspan="3" style="background:${c.color}">${c.label}</th></tr>` + items.map(e => `<tr><td>${escHTML(e.name)}</td><td>${e.scenes.join(', ')}</td><td>${e.count}</td></tr>`).join('');
-  }
-  if (rows) html += pg(`<div class="bd-t">ELEMENTS BY CATEGORY</div><table class="bd-l"><tr><th>Element</th><th>${unitWord}s</th><th>×</th></tr>${rows}</table>`);
-  if (d.format === 'stage') {
-    const cues = cueList(d);
-    if (cues.length) html += pg(`<div class="bd-t">CUE SHEET</div><table class="bd-l"><tr><th>Cue #</th><th>Type</th><th>Page</th><th>Standby / Go on</th><th>Description</th></tr>${cues.map(c => `<tr><td>${c.no}</td><td>${c.type}</td><td>${c.page}</td><td>${escHTML(c.on)}</td><td>${escHTML(c.desc)}</td></tr>`).join('')}</table>`);
-  }
   return html;
 }
 function xlsx(sheets) {      // sheets: [{name, rows:[[...]]}]  first row bold
@@ -377,13 +353,18 @@ function xlsx(sheets) {      // sheets: [{name, rows:[[...]]}]  first row bold
 }
 async function exportProd(kind) {
   if (S.view === 'text') syncFromDOM();
-  const d = S.doc, name = safeName(d.title) + ' - Breakdown';
+  const d = S.doc, type = CUE_TYPES[S.prod.sec] ? S.prod.sec : null;
+  const name = safeName(d.title) + (type ? ' - Cue sheet ' + type : ' - Breakdown');
   if (kind === 'pdf') {
     if (document.fonts) await document.fonts.ready;
-    $('#print').innerHTML = prodPrintHTML(d);
+    $('#print').innerHTML = type ? cuePrintHTML(d, type) : prodPrintHTML(d);
     if (Store.native) { const p = await Native.printPDF({ name: name + '.pdf', paper: d.settings.paper }); if (p) toast('Saved: ' + p, 4000); }
     else { const old = document.title; document.title = name; setTimeout(() => { window.print(); document.title = old; }, 60); }
     return;
+  }
+  if (type) {
+    const rows = [['Cue', 'Page', 'Description', 'Notes'], ...cueList(d).filter(c => c.type === type).map(c => [c.no, c.page, c.desc, c.note])];
+    return deliver(name + '.xlsx', xlsx([{ name: 'Cue sheet ' + type, rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
   }
   const units = prodUnits(d), cats = prodCats(d), keys = Object.keys(cats);
   const lines = blockLines(d), L = pageGeom(d).lines;
@@ -399,10 +380,5 @@ async function exportProd(kind) {
     if (stage) rows.push([u.act || '', u.num || '', u.heading, hd.setting || '', hd.time || '', eighths(ul, L), d.notes[u.id] || '', ...items]);
     else { const h = headingParts(d.blocks[u.start] && d.blocks[u.start].t === 'scene' ? d.blocks[u.start].text : ''); rows.push([u.num || '', h.name || u.heading, h.ie, h.time, eighths(ul, L), d.notes[u.id] || '', ...items]); }
   }
-  const all = elementsByCat(d, units);
-  const el = [['Category', 'Element', stage && !d.blocks.some(b => b.t === 'scene') ? 'Acts' : 'Scenes', 'Count']];
-  for (const k of keys) for (const e of [...all[k].values()].sort((a, b) => a.name.localeCompare(b.name, 'el'))) el.push([cats[k].label, e.name, e.scenes.join(', '), e.count]);
-  const sheets = [{ name: 'Breakdown', rows }, { name: 'Elements', rows: el }];
-  if (stage) sheets.push({ name: 'Cue sheet', rows: [['Cue #', 'Type', 'Page', 'Standby / Go on', 'Description'], ...cueList(d).map(c => [c.no, c.type, c.page, c.on, c.desc])] });
-  deliver(name + '.xlsx', xlsx(sheets), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
+  deliver(name + '.xlsx', xlsx([{ name: 'Breakdown', rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
 }
