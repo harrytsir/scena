@@ -15,6 +15,8 @@ const SC = global.__scena || {
   newer: (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; }
 };
 let win;
+let tagCats = [];
+ipcMain.on('ctx-cats', (e, list) => { tagCats = Array.isArray(list) ? list : []; });
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'scena', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
@@ -154,7 +156,13 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('context-menu', (e, p) => {
     const items = [];
-    if (p.isEditable) items.push({ label: 'Add note', click: () => win.webContents.send('ctx-add-note') }, { type: 'separator' });
+    if (p.isEditable) {
+      items.push({ label: 'Add note', click: () => win.webContents.send('ctx-add-note') });
+      if (tagCats.length) items.push({ label: 'Tag for production', submenu: [
+        ...tagCats.map(c => ({ label: c.label, click: () => win.webContents.send('ctx-tag', c.k) })),
+        { type: 'separator' }, { label: 'Remove tag', click: () => win.webContents.send('ctx-tag', 'untag') }] });
+      items.push({ type: 'separator' });
+    }
     for (const s of p.dictionarySuggestions || []) items.push({ label: s, click: () => win.webContents.replaceMisspelling(s) });
     if (p.misspelledWord) items.push({ label: 'Add to dictionary', click: () => win.webContents.session.addWordToSpellCheckerDictionary(p.misspelledWord) }, { type: 'separator' });
     items.push({ label: 'Cut', role: 'cut' }, { label: 'Copy', role: 'copy' }, { label: 'Paste', role: 'paste' }, { type: 'separator' }, { label: 'Select all', role: 'selectAll' });

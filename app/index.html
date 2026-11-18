@@ -44,12 +44,13 @@
       <button class="ib fmt" data-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
       <span class="sep"></span>
       <button class="ib" data-act="add-note" title="Add note (Ctrl+Alt+M)"><i data-ic="note"></i></button>
+      <button class="ib" data-act="tag-menu" title="Tag for production"><i data-ic="tag"></i></button>
     </div>
     <div class="tb-right">
       <div class="seg" id="view-seg">
         <button data-view="text" class="on">Script</button>
-        <button data-view="cards">Cards</button>
         <button data-view="title">Title &amp; notes</button>
+        <button data-view="prod">Production</button>
       </div>
       <button class="ib" data-act="undo" title="Undo (Ctrl+Z)"><i data-ic="undo"></i></button>
       <button class="ib" data-act="redo" title="Redo (Ctrl+Y)"><i data-ic="redo"></i></button>
@@ -91,6 +92,7 @@
       </div>
       <div id="cards" class="cards hidden"></div>
       <div id="titleview" class="sheet-wrap tv hidden"></div>
+      <div id="prodview" class="prodview hidden"></div>
     </main>
   </div>
 
@@ -117,5 +119,6 @@
 <script src="zip.js"></script>
 <script src="formats.js"></script>
 <script src="app.js"></script>
+<script src="production.js"></script>
 </body>
 </html>

@@ -83,14 +83,14 @@ const WORDS = {
 /* ---------- rich runs: [{t, b, i, u}] ---------- */
 function plainRuns(text) { return [{ t: text || '' }]; }
 function runsOf(b) { return b.runs && b.runs.length ? b.runs : plainRuns(b.text); }
-function hasFmt(runs) { return runs.some(r => r.b || r.i || r.u || r.c); }
+function hasFmt(runs) { return runs.some(r => r.b || r.i || r.u || r.c || r.g); }
 function normRuns(runs) {
   const out = [];
   for (const r of runs) {
     if (!r.t) continue;
     const p = out[out.length - 1];
-    if (p && !!p.b === !!r.b && !!p.i === !!r.i && !!p.u === !!r.u && (p.c || '') === (r.c || '')) p.t += r.t;
-    else { const n = { t: r.t }; if (r.b) n.b = 1; if (r.i) n.i = 1; if (r.u) n.u = 1; if (r.c) n.c = r.c; out.push(n); }
+    if (p && !!p.b === !!r.b && !!p.i === !!r.i && !!p.u === !!r.u && (p.c || '') === (r.c || '') && (p.g || '') === (r.g || '')) p.t += r.t;
+    else { const n = { t: r.t }; if (r.b) n.b = 1; if (r.i) n.i = 1; if (r.u) n.u = 1; if (r.c) n.c = r.c; if (r.g) n.g = r.g; out.push(n); }
   }
   return out;
 }
@@ -116,6 +116,7 @@ function runsHTML(runs, inEditor) {
     if (r.u) h = '<u>' + h + '</u>';
     if (r.i) h = '<i>' + h + '</i>';
     if (r.b) h = '<b>' + h + '</b>';
+    if (inEditor && r.g) h = `<span data-g="${r.g}">${h}</span>`;
     if (inEditor && r.c) h = `<span data-c="${r.c}">${h}</span>`;
     return h;
   }).join('');
@@ -345,4 +346,19 @@ function frontMatterHTML(doc, pageStyle, geom) {
     }
   }
   return html;
+}
+
+/* lines each element takes on the page (with the blank lines before it) — for page counts in eighths */
+function blockLines(doc) {
+  const g = pageGeom(doc), font = fontOf(doc), fmt = doc.format || 'screen';
+  return (doc.blocks || []).map((b, i) => {
+    const spec = typeSpec(fmt, b.t);
+    const text = displayRuns(b, spec).map(r => r.t).join('');
+    return wrapRanges(text, blockWidthIn(spec, g.textW) * 96, measurer(font.css, spec.italic)).length + (i ? spec.sb : 0);
+  });
+}
+function eighths(lines, perPage) {
+  const e = Math.max(1, Math.round(lines / perPage * 8));
+  const w = Math.floor(e / 8), r = e % 8;
+  return (w ? w + (r ? ' ' : '') : '') + (r ? r + '/8' : '');
 }

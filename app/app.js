@@ -24,6 +24,7 @@ const IC = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>', download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>', more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', x: '<path d="M18 6L6 18M6 6l12 12"/>', up: '<path d="M18 15l-6-6-6 6"/>', down: '<path d="M6 9l6 6 6-6"/>',
+  tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/>',
   note: '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/>',
   left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>'
 };
@@ -207,6 +208,7 @@ function loadIntoWorkspace(d) {
   document.body.dataset.format = d.format;
   document.title = (d.title || 'Untitled') + ' — Scena';
   applyFont();
+  if (Store.native && Native.setTagMenu) Native.setTagMenu(Object.entries(prodCats(d)).map(([k, c]) => ({ k, label: c.label })));
   setView('text');
   renderEditor();
   commitNow(true);
@@ -252,6 +254,7 @@ function domToRuns(el) {
       if (tag === 'I' || tag === 'EM') s.i = 1;
       if (tag === 'U') s.u = 1;
       if (tag === 'SPAN' && c.dataset && c.dataset.c) s.c = c.dataset.c;
+      if (tag === 'SPAN' && c.dataset && c.dataset.g) s.g = c.dataset.g;
       if (c.style) {
         const fw = c.style.fontWeight; if (fw === 'bold' || +fw >= 600) s.b = 1; else if (fw === 'normal' || (fw && +fw < 600)) delete s.b;
         if (c.style.fontStyle === 'italic') s.i = 1; else if (c.style.fontStyle === 'normal') delete s.i;
@@ -268,7 +271,7 @@ function isClean(el) {
   const kids = el.childNodes;
   for (const n of kids) {
     if (n.nodeType === 3) continue;
-    const noteSpan = n.nodeType === 1 && n.nodeName === 'SPAN' && n.attributes.length === 1 && n.hasAttribute('data-c');
+    const noteSpan = n.nodeType === 1 && n.nodeName === 'SPAN' && n.attributes.length === 1 && (n.hasAttribute('data-c') || n.hasAttribute('data-g'));
     if (!noteSpan && (n.nodeType !== 1 || !CLEAN_OK.has(n.nodeName) || n.attributes.length)) return false;
     if (n.nodeName === 'BR' && kids.length > 1) return false;
     if (n.nodeName !== 'BR' && !isClean(n)) return false;
@@ -1209,12 +1212,15 @@ editor.addEventListener('contextmenu', e => {
   if (Store.native && Native.onAddNote) return;
   e.preventDefault();
   const a = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY, width: 0, height: 0 }), contains: () => false };
-  openPop(a, mi('note', 'Add note') + (r && !r.collapsed ? mi('copy', 'Copy') + mi('cut', 'Cut') : ''), v => {
+  openPop(a, mi('note', 'Add note') + tagMenuHTML(ctxRange) + (r && !r.collapsed ? '<hr>' + mi('copy', 'Copy') + mi('cut', 'Cut') : ''), v => {
     if (v === 'note') addNote(ctxRange);
+    else if (v.startsWith('tag:')) tagRange(ctxRange, v.slice(4));
+    else if (v === 'untag') untagRange(ctxRange);
     else { const s2 = getSelection(); s2.removeAllRanges(); s2.addRange(ctxRange); document.execCommand(v); }
   });
 });
 if (Store.native && Native.onAddNote) Native.onAddNote(() => addNote(ctxRange));
+if (Store.native && Native.onTag) Native.onTag((k) => k === 'untag' ? untagRange(ctxRange) : tagRange(ctxRange, k));
 function noteContext(c) {
   const spans = [...editor.querySelectorAll(`[data-c="${c.id}"]`)];
   if (c.id[0] === 'r') return spans.map(s => s.textContent).join(' ');
@@ -1260,15 +1266,17 @@ function openSide(which) {
 function setView(v) {
   if (S.view === 'text' && v !== 'text' && S.doc) syncFromDOM();
   S.view = v;
-  document.body.classList.toggle('view-cards', v === 'cards');
+  document.body.classList.toggle('view-cards', v === 'cards' || v === 'prod');
   document.body.classList.toggle('view-title', v === 'title');
   $$('#view-seg button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
   $('#sheet-wrap').classList.toggle('hidden', v !== 'text');
   $('#cards').classList.toggle('hidden', v !== 'cards');
   $('#titleview').classList.toggle('hidden', v !== 'title');
+  $('#prodview').classList.toggle('hidden', v !== 'prod');
   closeAC(); closePop();
   if (v === 'cards') { S.pg = paginate(S.doc); renderCards(); }
   if (v === 'title') renderTitleView();
+  if (v === 'prod') renderProd();
   if (v !== 'title') S.front = S.front || 'title';
   if (v === 'text') { editor.focus(); layoutPages(); }
 }
@@ -1567,6 +1575,7 @@ document.addEventListener('click', e => {
     case 'toggle-side': $('#side').classList.toggle('open'); if (S.zoom == null) applyZoom(); return;
     case 'style-menu': return styleMenu();
     case 'add-note': return addNote();
+    case 'tag-menu': return tagButton(b);
     case 'tab': if (document.activeElement !== editor) editor.focus(); return tabCmd(false);
     case 'undo': return undo();
     case 'redo': return redo();
@@ -1582,7 +1591,7 @@ document.addEventListener('click', e => {
     case 'more-menu': return moreMenu(b);
   }
 });
-$$('[data-act="undo"], [data-act="redo"], [data-act="tab"], .tb-center [data-act="add-note"]').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
+$$('[data-act="undo"], [data-act="redo"], [data-act="tab"], .tb-center [data-act="add-note"], .tb-center [data-act="tag-menu"]').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
 $('#doc-title').addEventListener('input', () => {
   S.doc.title = $('#doc-title').value;
   document.title = (S.doc.title || 'Untitled') + ' — Scena';
