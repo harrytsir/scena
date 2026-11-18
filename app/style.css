@@ -378,3 +378,14 @@ body.dark .notepop { background: #2a2414; border-color: #5b4a0c; }
 .cue-n:hover { border-color: var(--line); } .cue-n:focus { border-color: var(--accent); background: var(--panel); }
 .cue-t td[data-gob] { cursor: pointer; }
 .bd-sub { text-align: center; margin: -6pt 0 10pt; color: #444; }
+
+/* Title & notes in the sidebar */
+.side-pages { border-bottom: 1px solid var(--line); padding: 8px 8px 6px; }
+.sp-h { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: transparent; padding: 4px 6px; cursor: pointer; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+.sp-h svg { width: 13px; height: 13px; }
+.sp-list { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 4px; }
+.sp-i { display: flex; align-items: center; justify-content: space-between; border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--ink2); font-size: 12.5px; }
+.sp-i:hover { background: var(--hover); }
+.sp-i.on { background: var(--sel); color: var(--ink); }
+.sp-i .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.fv-main { padding-top: 26px; }

@@ -1060,13 +1060,27 @@ function renderTitleView() {
     body = incl(sec, P[sec].include, 'this page') + sheet(`<div class="fv-flow"><div class="fv-h">${f.h[docLang(d)]}</div>
       <textarea class="fv-ta" data-pg="${sec}.text" placeholder="${escHTML(f.ph)}">${escHTML(P[sec].text)}</textarea></div>`, 'grow');
   }
-  $('#titleview').innerHTML = `<div class="fv"><nav class="fv-nav">${nav}</nav><div class="fv-main">${body}</div></div>`;
+  $('#titleview').innerHTML = `<div class="fv"><div class="fv-main">${body}</div></div>`;
+  renderSidePages();
   $$('#titleview .fv-ta').forEach(autoGrow);
 }
 function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 40) + 'px'; }
-$('#titleview').addEventListener('click', e => {
+// Title & notes live in the sidebar, above Scenes / Characters / Notes
+function renderSidePages() {
+  if (!S.doc) return;
+  const d = S.doc, open = localStorage.getItem('scena:pages') !== '0';
+  const items = Object.entries(FRONT).filter(([, f]) => !f.stage || d.format === 'stage').map(([k, f]) => {
+    const has = k === 'title' ? !!d.title : k === 'cast' ? !!d.meta.cast.trim() : hasFront(d, k);
+    return `<button class="sp-i ${S.view === 'title' && S.front === k ? 'on' : ''}" data-front="${k}"><span>${f.label}</span>${has ? '<i class="dot"></i>' : ''}</button>`;
+  }).join('');
+  $('#side-pages').innerHTML = `<button class="sp-h" data-sp-toggle><span>Title &amp; notes</span>${icon(open ? 'down' : 'right')}</button>${open ? `<div class="sp-list">${items}</div>` : ''}`;
+}
+$('#side-pages').addEventListener('click', e => {
+  if (e.target.closest('[data-sp-toggle]')) { localStorage.setItem('scena:pages', localStorage.getItem('scena:pages') === '0' ? '1' : '0'); renderSidePages(); return; }
   const b = e.target.closest('[data-front]'); if (!b) return;
-  S.front = b.dataset.front; renderTitleView();
+  S.front = b.dataset.front;
+  if (S.view === 'title') renderTitleView(); else setView('title');
+  if (innerWidth < 1000) $('#side').classList.remove('open');
 });
 
 $('#titleview').addEventListener('input', e => {
@@ -1074,7 +1088,7 @@ $('#titleview').addEventListener('input', e => {
   if (pg) {
     const [k, f] = pg.split('.'); frontPages(S.doc)[k][f] = e.target.value; autoGrow(e.target); metaChanged();
     const btn = $(`#titleview [data-front="${k}"]`);
-    if (btn) { const has = hasFront(S.doc, k); const dot = btn.querySelector('.dot'); if (has && !dot) btn.insertAdjacentHTML('beforeend', '<i class="dot"></i>'); if (!has && dot) dot.remove(); }
+    renderSidePages();
     return;
   }
   const k = e.target.dataset.tp; if (!k) return;
@@ -1277,8 +1291,10 @@ function setView(v) {
   if (v === 'cards') { S.pg = paginate(S.doc); renderCards(); }
   if (v === 'title') renderTitleView();
   if (v === 'prod') renderProd();
-  if (v !== 'title') S.front = S.front || 'title';
+  S.front = S.front || 'title';
+  if (v === 'title' && innerWidth >= 1000) $('#side').classList.add('open');
   if (v === 'text') { editor.focus(); layoutPages(); }
+  renderSidePages();
 }
 $('#view-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
 
@@ -1352,7 +1368,16 @@ if (localStorage.getItem('scena:zoom')) S.zoom = +localStorage.getItem('scena:zo
 
 /* ================= MENUS & DIALOGS ================= */
 function exportMenu(anchor) {
-  openPop(anchor, mi('pdf', 'PDF…', 'Ctrl+P') + mi('docx', 'Word (.docx)…') + mi('fdx', 'Final Draft (.fdx)') + mi('fountain', 'Fountain (.fountain)') + '<hr>' + mi('scena', 'Scena file (.scena)', 'to move devices'), v => (v === 'pdf' || v === 'docx') ? exportDialog(v) : doExport(v), { align: 'right' });
+  const stage = S.doc.format === 'stage';
+  openPop(anchor, '<div class="pop-h">Script</div>' + mi('pdf', 'PDF…', 'Ctrl+P') + mi('docx', 'Word (.docx)…') + mi('fdx', 'Final Draft (.fdx)') + mi('fountain', 'Fountain (.fountain)') +
+    '<hr><div class="pop-h">Production</div>' + mi('bd-pdf', 'Breakdown sheets — PDF') + mi('bd-xlsx', 'Breakdown — Excel') + (stage ? mi('cues', 'Cue sheet…') : '') +
+    '<hr>' + mi('scena', 'Scena file (.scena)', 'to move devices'), v => {
+      if (v === 'pdf' || v === 'docx') return exportDialog(v);
+      if (v === 'bd-pdf') return exportProd('pdf');
+      if (v === 'bd-xlsx') return exportProd('xlsx');
+      if (v === 'cues') return cueExportDialog();
+      doExport(v);
+    }, { align: 'right' });
 }
 function moreMenu(anchor) {
   const dark = document.body.classList.contains('dark');

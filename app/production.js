@@ -24,15 +24,17 @@ const PROD_CATS = {
     setchange: { label: 'Set Changes', color: '#d9f99d', cue: 'SC' },
     sfx:       { label: 'Special Effects / Projections', color: '#93c5fd', cue: 'FX' },
     props:     { label: 'Props (Hand / Set)', color: '#d8b4fe' },
-    lx:        { label: 'Lighting Cues (LX)', color: '#fcd34d', cue: 'LX' },
+    lx:        { label: 'Lighting Cues (LX)', color: '#fcd34d', cue: 'LX', cueOnly: true },
     costumes:  { label: 'Costumes / Quick Changes', color: '#67e8f9' },
     makeup:    { label: 'Makeup / Hair', color: '#f0abfc' },
-    sq:        { label: 'Sound & Music Cues (SQ)', color: '#d6bfa5', cue: 'SQ' },
+    sq:        { label: 'Sound & Music Cues (SQ)', color: '#d6bfa5', cue: 'SQ', cueOnly: true },
     equipment: { label: 'Stage Equipment', color: '#a5b4fc' },
     pnotes:    { label: 'Director / Stage Manager Notes', color: '#d4d4d8' }
   }
 };
 const prodCats = (d) => PROD_CATS[(d || S.doc).format] || PROD_CATS.screen;
+// the boxes of the breakdown sheet: lighting and sound have their own cue sheets
+const bdCats = (d) => Object.fromEntries(Object.entries(prodCats(d)).filter(([, c]) => !c.cueOnly));
 (function tagColours() {
   const css = [];
   for (const [fmt, cats] of Object.entries(PROD_CATS)) for (const [k, c] of Object.entries(cats)) {
@@ -190,12 +192,11 @@ function renderProd() {
     }).join('') : ''}`;
   const main = CUE_TYPES[P.sec] ? cuesHTML(d, P.sec) : sheetHTML(d, units, P.unit, unitWord);
   view.innerHTML = `<div class="pv"><nav class="pv-nav">${nav}</nav><div class="pv-main">
-    <div class="pv-bar"><span class="hint">${CUE_TYPES[P.sec] ? 'Export gives only this cue sheet.' : 'Tag words in the script: select them, right click › Tag for production.'}</span><span class="sp"></span>
-      <button class="btn small" data-pexp="pdf">${icon('download')}PDF</button><button class="btn small" data-pexp="xlsx">${icon('download')}Excel</button></div>
+    <div class="pv-bar"><span class="hint">Tag words in the script: select them, right click › Tag for production. Export from the Export menu.</span></div>
     ${main}</div></div>`;
 }
 function sheetHTML(d, units, ui, unitWord) {
-  const u = units[ui], cats = prodCats(d), { box, words } = unitData(d, u);
+  const u = units[ui], cats = bdCats(d), { box, words } = unitData(d, u);
   const lines = blockLines(d), L = pageGeom(d).lines;
   const ul = lines.slice(u.start, u.end).reduce((a, b) => a + b, 0);
   const pages = (S.domPages && S.domPages.pageOf) || [];
@@ -268,7 +269,6 @@ $('#prodview').addEventListener('click', e => {
   const rm = t.closest('[data-rm]');
   if (rm) { const units = prodUnits(S.doc), id = units[S.prod.unit].id, m = bdStore(S.doc)[id] || {}; m[rm.dataset.rm] = (m[rm.dataset.rm] || []).filter(x => x !== rm.dataset.name); bdStore(S.doc)[id] = m; metaChanged(); renderProd(); return; }
   const go = t.closest('[data-gob]'); if (go) { goToBlock(+go.dataset.gob); return; }
-  const ex = t.closest('[data-pexp]'); if (ex) { exportProd(ex.dataset.pexp); }
 });
 $('#prodview').addEventListener('keydown', e => {
   const k = e.target.dataset.add;
@@ -301,7 +301,7 @@ function cuePrintHTML(d, type) {
     ${cues.map(c => `<tr><td><b>${c.no}</b></td><td>${c.page}</td><td>${escHTML(c.desc)}</td><td>${escHTML(c.note)}</td></tr>`).join('')}</table></div>`;
 }
 function prodPrintHTML(d) {
-  const units = prodUnits(d), cats = prodCats(d), p = PAPER[d.settings.paper] || PAPER.A4;
+  const units = prodUnits(d), cats = bdCats(d), p = PAPER[d.settings.paper] || PAPER.A4;
   const lines = blockLines(d), L = pageGeom(d).lines;
   const pages = (S.domPages && S.domPages.pageOf) || paginate(d).blockPage;
   const unitWord = d.format === 'stage' && !d.blocks.some(b => b.t === 'scene') ? 'Act' : 'Scene';
@@ -325,7 +325,7 @@ function prodPrintHTML(d) {
     }
     const keys = Object.keys(cats);
     let grid = '';
-    for (let r = 0; r < 4; r++) {
+    for (let r = 0; r * 3 < keys.length; r++) {
       grid += '<tr>' + keys.slice(r * 3, r * 3 + 3).map(k => `<td class="box"><div class="bh" style="background:${cats[k].color}">${cats[k].label}</div>${[...box[k].values()].map(e => `<div>${escHTML(e.name)}${e.count > 1 ? ` (×${e.count})` : ''}</div>`).join('')}</td>`).join('') + '</tr>';
     }
     html += pg(`<div class="bd-t">${d.format === 'stage' ? 'STAGE BREAKDOWN SHEET' : 'BREAKDOWN SHEET'}</div>
@@ -351,9 +351,24 @@ function xlsx(sheets) {      // sheets: [{name, rows:[[...]]}]  first row bold
   });
   return Zip.write(files);
 }
-async function exportProd(kind) {
+function cueExportDialog() {
+  const cues = cueList(S.doc);
+  const types = Object.entries(CUE_TYPES).map(([t, label]) => ({ t, label, n: cues.filter(c => c.type === t).length }));
+  const first = (types.find(x => x.t === S.prod.sec && x.n) || types.find(x => x.n) || {}).t;
+  showModal(`<h2>Cue sheet</h2>
+    <div class="form exp-list">${types.map(x => `<label class="chk${x.n ? '' : ' off'}"><input type="radio" name="cue" value="${x.t}" ${x.t === first ? 'checked' : ''} ${x.n ? '' : 'disabled'}> ${x.label} <span class="hint">— ${x.n ? x.n + ' cue' + (x.n > 1 ? 's' : '') : 'empty'}</span></label>`).join('')}</div>
+    <div class="modal-actions"><button class="btn" data-x="no">Cancel</button><button class="btn" data-x="xlsx" ${first ? '' : 'disabled'}>Excel</button><button class="btn dark" data-x="pdf" ${first ? '' : 'disabled'}>PDF</button></div>`, box => {
+    box.onclick = e => {
+      const x = e.target.closest('[data-x]')?.dataset.x; if (!x) return;
+      const t = (box.querySelector('input[name=cue]:checked') || {}).value;
+      closeModal();
+      if ((x === 'pdf' || x === 'xlsx') && t) exportProd(x, t);
+    };
+  });
+}
+async function exportProd(kind, type) {
   if (S.view === 'text') syncFromDOM();
-  const d = S.doc, type = CUE_TYPES[S.prod.sec] ? S.prod.sec : null;
+  const d = S.doc; type = type && CUE_TYPES[type] ? type : null;
   const name = safeName(d.title) + (type ? ' - Cue sheet ' + type : ' - Breakdown');
   if (kind === 'pdf') {
     if (document.fonts) await document.fonts.ready;
@@ -366,7 +381,7 @@ async function exportProd(kind) {
     const rows = [['Cue', 'Page', 'Description', 'Notes'], ...cueList(d).filter(c => c.type === type).map(c => [c.no, c.page, c.desc, c.note])];
     return deliver(name + '.xlsx', xlsx([{ name: 'Cue sheet ' + type, rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
   }
-  const units = prodUnits(d), cats = prodCats(d), keys = Object.keys(cats);
+  const units = prodUnits(d), cats = bdCats(d), keys = Object.keys(cats);
   const lines = blockLines(d), L = pageGeom(d).lines;
   const stage = d.format === 'stage';
   const head = stage ? ['Act #', '#', 'Name', 'Setting', 'Time', 'Page count', 'Description', ...keys.map(k => cats[k].label)]
