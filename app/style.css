@@ -402,3 +402,13 @@ body.dark .side-views button.on { background: #2c2c31; }
 #sv-prod .pv-nav-h:first-child { padding-top: 4px; }
 .side { width: 260px; }
 .pv-main { max-width: none; }
+.exp-h { font-weight: 600; margin: 18px 0 8px; font-size: 13.5px; }
+.exp-h .hint { font-weight: 400; font-size: 12px; }
+.exp-cue label.chk { padding: 7px 10px; }
+.exp-cue .notes-chk { margin-top: 6px; border-style: dashed !important; }
+/* printed cue script */
+.cms { position: absolute; left: -1.38in; top: 0; width: 1.22in; }
+.cm { position: absolute; left: 0; width: 1.22in; font: 7.5pt/1.15 Arial, 'Scena Sans', sans-serif; border-left: 3px solid #999; padding: 1pt 0 1pt 4pt; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.cm-n { background: #fef9c3; }
+.cs-hd { position: absolute; font: 8pt Arial, 'Scena Sans', sans-serif; color: #555; text-transform: uppercase; letter-spacing: .5px; }
+.tp-cue { font-weight: 700; letter-spacing: 1px; }

@@ -402,3 +402,45 @@ async function exportProd(kind, type) {
   }
   deliver(name + '.xlsx', xlsx([{ name: 'Breakdown', rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
 }
+
+/* ---------- Cue script: the play with one department's marks, and everything about each cue beside it ---------- */
+const CUE_SCRIPT_NAME = { LX: 'Lighting script', SQ: 'Sound script', FX: 'Effects script', SC: 'Set changes script' };
+function cueScriptOptions(d) {
+  const cats = prodCats(d), counts = {};
+  for (const t of tagsIn(d)) counts[t.cat] = (counts[t.cat] || 0) + 1;
+  const notes = (d.comments || []).length;
+  const opts = Object.entries(cats).filter(([k]) => counts[k]).map(([k, c]) => ({ k, label: c.label, n: counts[k] }));
+  return { opts, total: Object.values(counts).reduce((a, b) => a + b, 0), notes };
+}
+function cueScript(d, choice, withNotes) {
+  const cats = prodCats(d);
+  const want = (k) => choice === 'all' || choice === k;
+  const marks = {}, colors = {}, cueNo = {}, cn = d.cuenotes || {};
+  for (const [k, c] of Object.entries(cats)) if (want(k)) colors[k] = c.color;
+  d.blocks.forEach((b) => {
+    const runs = runsOf(b); let off = 0, prevG = null, prevC = null, acc = null;
+    const flush = () => {
+      if (!acc) return;
+      const c = cats[acc.cat];
+      if (c && want(acc.cat)) {
+        let label, note = '';
+        if (c.cue) { cueNo[c.cue] = (cueNo[c.cue] || 0) + 1; label = c.cue + ' ' + cueNo[c.cue]; note = cn[b.id + ':' + normName(acc.text)] || ''; }
+        else label = c.label;
+        (marks[b.id] = marks[b.id] || []).push({ off: acc.off, kind: 'tag', cat: acc.cat, color: c.color, label, note, text: acc.text.trim() });
+      } else if (c && c.cue) { cueNo[c.cue] = (cueNo[c.cue] || 0) + 1; }      // keep numbers the same as the cue sheets
+      acc = null;
+    };
+    for (const r of runs) {
+      if (r.g && r.g === prevG && acc) acc.text += r.t;
+      else { flush(); if (r.g) acc = { cat: r.g, off, text: r.t }; }
+      if (withNotes && r.c && r.c !== prevC) {
+        const cm = (d.comments || []).find(x => x.id === r.c);
+        if (cm && cm.text) (marks[b.id] = marks[b.id] || []).push({ off, kind: 'note', color: '#facc15', label: 'Note', note: cm.text });
+      }
+      prevG = r.g || null; prevC = r.c || null; off += r.t.length;
+    }
+    flush();
+  });
+  const title = choice === 'all' ? 'Production script' : choice === 'none' ? 'Director’s script' : (cats[choice] && cats[choice].cue ? CUE_SCRIPT_NAME[cats[choice].cue] : (cats[choice] ? cats[choice].label + ' script' : ''));
+  return { marks, colors, notes: !!withNotes, title };
+}

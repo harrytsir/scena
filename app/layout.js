@@ -194,7 +194,7 @@ function paginate(doc) {
     const runs = overrideRuns || displayRuns(b, spec);
     const text = runs.map(r => r.t).join('');
     return wrapRanges(text, w * 96, measurer(font.css, spec.italic)).map(({ a, b: e }) => ({
-      runs: sliceRuns(runs, a, e), t: b.t, ind: spec.ind, w, align: spec.align, italic: spec.italic, underline: spec.underline
+      runs: sliceRuns(runs, a, e), t: b.t, ind: spec.ind, w, align: spec.align, italic: spec.italic, underline: spec.underline, bid: b.id, a, e
     }));
   };
   const newPage = () => { pages.push([]); used = 0; };
@@ -282,7 +282,8 @@ function buildPrintHTML(doc) {
   const font = fontOf(doc);
   const pageStyle = `width:${p.w}in;height:${p.h}in;font-family:${font.css.replace(/"/g, "'")};`;
   let html = `<style>@page{size:${p.w}in ${p.h}in;margin:0}</style>`;
-  if (doc.settings?.titlePage !== false && doc.title) html += titlePageHTML(doc, pageStyle);
+  const cs = doc._cue;
+  if (doc.settings?.titlePage !== false && doc.title) html += titlePageHTML(doc, pageStyle).replace('<div class="tp-gap"></div>', cs ? `<div class="tp-gap"></div><div class="tp-cue">${escHTML(cs.title.toUpperCase())}</div><div class="tp-gap"></div>` : '<div class="tp-gap"></div>');
   if (doc.format === 'stage' && meta.cast && meta.cast.trim()) {
     let c = `<div class="tp-cast" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">`;
     c += `<div class="tp-cast-h">${WORDS[docLang(doc)].cast}</div>`;
@@ -293,18 +294,30 @@ function buildPrintHTML(doc) {
   html += frontMatterHTML(doc, pageStyle, geom);
   const showNums = !!doc.settings?.sceneNumbers;
   if (!doc._noScript) pages.forEach((lines, pi) => {
-    let body = '';
+    let body = '', margin = '', free = -1, li = -1;
     lines.forEach(l => {
+      li++;
+      if (cs && !l.blank && cs.marks[l.bid]) {
+        for (const m of cs.marks[l.bid]) {
+          if (m.off < l.a || m.off >= Math.max(l.e, l.a + 1)) continue;
+          const txt = (m.label ? m.label : '') + (m.note ? ' · ' + m.note : '');
+          const h = Math.ceil(Math.max(1, txt.length) / 24) * (8.5 / 72) + 0.06;
+          const top = Math.max(li * lh, free);
+          margin += `<div class="cm${m.kind === 'note' ? ' cm-n' : ''}" style="top:${top}in;border-left-color:${m.color}"><b>${escHTML(m.label)}</b>${m.note ? ' ' + escHTML(m.note) : ''}</div>`;
+          free = top + h;
+        }
+      }
       if (l.blank) { body += `<div class="pl" style="height:${lh}in"></div>`; return; }
       const st = [`height:${lh}in`, `margin-left:${l.ind}in`, `width:${l.w}in`];
       if (l.align) st.push(`text-align:${l.align}`);
       if (l.italic) st.push('font-style:italic');
       if (l.underline) st.push('text-decoration:underline');
-      const num = showNums && l.sn ? `<span class="sn" style="left:-${l.ind + 0.9}in">${l.sn}</span><span class="sn" style="left:${geom.textW - l.ind + 0.25}in">${l.sn}</span>` : '';
-      body += `<div class="pl" style="${st.join(';')}">${runsHTML(l.runs) || '&nbsp;'}${num}</div>`;
+      const num = showNums && l.sn ? (cs ? '' : `<span class="sn" style="left:-${l.ind + 0.9}in">${l.sn}</span>`) + `<span class="sn" style="left:${geom.textW - l.ind + 0.25}in">${l.sn}</span>` : '';
+      body += `<div class="pl" style="${st.join(';')}">${(cs ? runsMarkedHTML(l.runs, cs) : runsHTML(l.runs)) || '&nbsp;'}${num}</div>`;
     });
     const pn = pi === 0 ? '' : `<div class="pnum" style="top:0.5in;right:${MARGIN.right}in">${pi + 1}.</div>`;
-    html += `<div class="ppage" style="${pageStyle}">${pn}<div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${body}</div></div>`;
+    const hd = cs ? `<div class="cs-hd" style="top:0.5in;left:${MARGIN.left}in">${escHTML((doc.title || '') + ' — ' + cs.title)}</div>` : '';
+    html += `<div class="ppage" style="${pageStyle}">${hd}${pn}<div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${margin ? `<div class="cms">${margin}</div>` : ''}${body}</div></div>`;
   });
   return html;
 }
@@ -361,4 +374,14 @@ function eighths(lines, perPage) {
   const e = Math.max(1, Math.round(lines / perPage * 8));
   const w = Math.floor(e / 8), r = e % 8;
   return (w ? w + (r ? ' ' : '') : '') + (r ? r + '/8' : '');
+}
+
+// script text with the chosen production tags (and notes) coloured
+function runsMarkedHTML(runs, cs) {
+  return runs.map(r => {
+    let h = runsHTML([r]);
+    if (r.g && cs.colors[r.g]) h = `<span style="background:${cs.colors[r.g]};-webkit-print-color-adjust:exact;print-color-adjust:exact">${h}</span>`;
+    else if (r.c && cs.notes) h = `<span style="background:#fef08a;-webkit-print-color-adjust:exact;print-color-adjust:exact">${h}</span>`;
+    return h;
+  }).join('');
 }

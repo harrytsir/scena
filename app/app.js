@@ -1507,8 +1507,20 @@ function exportParts(d) {
 }
 function exportDialog(kind) {
   const parts = exportParts(S.doc);
+  syncFromDOM();
+  const co = cueScriptOptions(S.doc), ex = S.doc.settings.export || {};
+  const cur = ex.cue && (ex.cue === 'all' || co.opts.some(o => o.k === ex.cue)) ? ex.cue : 'off';
+  const cueHTML = `<div class="exp-h">Cue Script <span class="hint">— the script with one department’s marks in colour, and each cue’s details beside it</span></div>
+    <div class="form exp-list exp-cue">
+      <label class="chk"><input type="radio" name="cue" value="off" ${cur === 'off' ? 'checked' : ''}> Off — clean script</label>
+      ${co.opts.map(o => `<label class="chk"><input type="radio" name="cue" value="${o.k}" ${cur === o.k ? 'checked' : ''}> ${dot(o.k)}${o.label} <span class="hint">— ${o.n}</span></label>`).join('')}
+      ${co.opts.length > 1 ? `<label class="chk"><input type="radio" name="cue" value="all" ${cur === 'all' ? 'checked' : ''}> All production tags <span class="hint">— ${co.total}</span></label>` : ''}
+      ${co.notes ? `<label class="chk notes-chk"><input type="checkbox" id="cue-notes" ${ex.cueNotes ? 'checked' : ''}> Include my notes <span class="hint">— ${co.notes}</span></label>` : ''}
+      ${!co.opts.length && !co.notes ? '<p class="hint">Tag words for production (right click › Tag for production) to make cue scripts.</p>' : ''}
+    </div>`;
   showModal(`<h2>Export ${kind === 'pdf' ? 'PDF' : 'Word'}</h2>
     <div class="form exp-list">${parts.map(p => `<label class="chk${p.has ? '' : ' off'}"><input type="checkbox" data-ex="${p.k}" ${p.on ? 'checked' : ''} ${p.has ? '' : 'disabled'}> ${p.label}${p.has ? '' : ' <span class="hint">— empty</span>'}</label>`).join('')}</div>
+    ${cueHTML}
     <div class="modal-actions"><button class="btn" data-x="no">Cancel</button><button class="btn dark" data-x="go">Export</button></div>`, box => {
     const sync = () => { box.querySelector('[data-x="go"]').disabled = !box.querySelector('[data-ex]:checked'); };
     box.addEventListener('change', sync); sync();
@@ -1517,6 +1529,9 @@ function exportDialog(kind) {
       if (x === 'go') {
         const sel = {}; $$('[data-ex]', box).forEach(c => { sel[c.dataset.ex] = c.checked; });
         S.doc.settings.export = Object.assign(S.doc.settings.export || {}, Object.fromEntries(Object.entries(sel).filter(([k]) => parts.find(p => p.k === k).has)));
+        sel.cue = (box.querySelector('input[name=cue]:checked') || {}).value || 'off';
+        sel.cueNotes = !!(box.querySelector('#cue-notes') || {}).checked;
+        S.doc.settings.export.cue = sel.cue; S.doc.settings.export.cueNotes = sel.cueNotes;
         metaChanged();
         closeModal(); doExport(kind, sel); return;
       }
@@ -1533,10 +1548,12 @@ function exportDoc(sel) {
   if (!sel.cast) d.meta.cast = '';
   for (const k of ['note', 'logline', 'synopsis', 'treatment']) P[k].include = !!sel[k];
   d._noScript = !sel.script;
+  if ((sel.cue && sel.cue !== 'off') || sel.cueNotes) d._cue = cueScript(d, sel.cue && sel.cue !== 'off' ? sel.cue : 'none', sel.cueNotes);
   return d;
 }
+const cueSuffix = (sel) => { if (!sel || ((!sel.cue || sel.cue === 'off') && !sel.cueNotes)) return ''; const c = cueScript(S.doc, sel.cue && sel.cue !== 'off' ? sel.cue : 'none', sel.cueNotes); return ' - ' + c.title; };
 async function exportPDF(sel) {
-  const name = prepExport();
+  const name = prepExport() + cueSuffix(sel);
   const doc = exportDoc(sel);
   if (document.fonts) await document.fonts.ready;
   $('#print').innerHTML = buildPrintHTML(doc);
@@ -1551,7 +1568,7 @@ async function exportPDF(sel) {
 async function doExport(kind, sel) {
   const name = prepExport();
   if (kind === 'pdf') return exportPDF(sel || exportSel());
-  if (kind === 'docx') return deliver(name + '.docx', Formats.toDocx(exportDoc(sel || exportSel())), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
+  if (kind === 'docx') return deliver(name + cueSuffix(sel) + '.docx', Formats.toDocx(exportDoc(sel || exportSel())), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
   if (kind === 'fdx') return deliver(name + '.fdx', Formats.toFDX(S.doc), 'application/xml', 'fdx');
   if (kind === 'fountain') return deliver(name + '.fountain', Formats.toFountain(S.doc), 'text/plain;charset=utf-8', 'fountain');
   if (kind === 'scena') { await saveNow(); return deliver(name + '.scena', JSON.stringify(S.doc, null, 1), 'application/json', 'scena'); }

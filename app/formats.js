@@ -237,6 +237,7 @@ ${tp.join('\n')}
     const front = [];
     if (hasTP) {
       let t = cp(greekCaps(doc.title || ''), 'center', 4320).replace(/<w:r>/, '<w:r><w:rPr><w:b/><w:u w:val="single"/></w:rPr>');
+      if (doc._cue) t += cp(doc._cue.title.toUpperCase(), 'center', 240);
       if (m.subtitle) t += cp(m.subtitle);
       if (m.credit) t += cp(m.credit, 'center', 480);
       if (m.author) m.author.split('\n').forEach((l, i) => { t += cp(l, 'center', i ? 0 : 240); });
@@ -264,7 +265,20 @@ ${tp.join('\n')}
     for (const b of (doc._noScript ? [] : doc.blocks)) {
       const sp = typeSpec(fmt, b.t);
       let rr = runsOf(b); if (sp.upper) rr = mapRunsText(rr, greekCaps);
-      body += `<w:p>${pPr(b.t, sp.pageBreak && !first ? '<w:pageBreakBefore/>' : '')}${rr.filter(r => r.t).map(r => run(r.t, sp, r)).join('')}</w:p>`;
+      const cs = doc._cue, mk = cs && cs.marks[b.id] ? cs.marks[b.id].slice() : [];
+      let off = 0, out = '';
+      for (const r of rr) {
+        if (!r.t) continue;
+        while (mk.length && mk[0].off <= off) {
+          const m = mk.shift();
+          out += `<w:r><w:rPr><w:b/><w:sz w:val="18"/><w:shd w:val="clear" w:color="auto" w:fill="${m.color.replace('#', '')}"/></w:rPr><w:t xml:space="preserve">[${xmlEsc(m.label + (m.note ? ' · ' + m.note : ''))}] </w:t></w:r>`;
+        }
+        let x = run(r.t, sp, r);
+        const fill = cs && ((r.g && cs.colors[r.g]) || (r.c && cs.notes && '#fef08a'));
+        if (fill) x = x.includes('<w:rPr>') ? x.replace('<w:rPr>', `<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="${fill.replace('#', '')}"/>`) : x.replace('<w:r>', `<w:r><w:rPr><w:shd w:val="clear" w:color="auto" w:fill="${fill.replace('#', '')}"/></w:rPr>`);
+        out += x; off += r.t.length;
+      }
+      body += `<w:p>${pPr(b.t, sp.pageBreak && !first ? '<w:pageBreakBefore/>' : '')}${out}</w:p>`;
       first = false;
     }
     body += doc._noScript ? sect('', false) : sect('<w:pgNumType w:start="1"/>', true);
