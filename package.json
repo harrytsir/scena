@@ -1,7 +1,7 @@
 {
   "name": "scena",
   "productName": "Scena",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Screenplay & stage play editor",
   "main": "electron/boot.js",
   "author": "Created.",

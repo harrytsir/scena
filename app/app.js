@@ -1151,6 +1151,7 @@ function noteSpot(c) {
   return { x: right ? rect.right : rect.left, y: rect.top };
 }
 function renderNoteMarks() {
+  renderNoteList();
   const box = $('#notemarks'); if (!box || !S.doc || S.view !== 'text') return;
   const base = $('#sheet').getBoundingClientRect();
   const z = parseFloat($('#sheet-wrap').style.zoom) || 1;
@@ -1214,10 +1215,45 @@ editor.addEventListener('contextmenu', e => {
   });
 });
 if (Store.native && Native.onAddNote) Native.onAddNote(() => addNote(ctxRange));
+function noteContext(c) {
+  const spans = [...editor.querySelectorAll(`[data-c="${c.id}"]`)];
+  if (c.id[0] === 'r') return spans.map(s => s.textContent).join(' ');
+  const el = spans.length ? blockOf(spans[0]) : [...editor.children].find(e => e.dataset.id === c.block);
+  return el ? elText(el) : '';
+}
+function renderNoteList() {
+  if (!S.doc) return;
+  const order = new Map([...editor.children].map((el, i) => [el.dataset.id, i]));
+  const where = (c) => { const sp = editor.querySelector(`[data-c="${c.id}"]`); const el = sp ? blockOf(sp) : [...editor.children].find(e => e.dataset.id === c.block); return el ? blockIndex(el) : -1; };
+  const list = comments().map(c => ({ c, i: where(c) })).sort((a, b) => a.i - b.i);
+  const pageOf = (S.domPages && S.domPages.pageOf) || [];
+  $('#side-seg [data-side="notes"]').innerHTML = 'Notes' + (list.length ? ` <span class="cnt">${list.length}</span>` : '');
+  if ($('#side-notes').classList.contains('hidden')) return;
+  $('#side-notes').innerHTML = list.length ? list.map(({ c, i }) => `
+    <div class="nl" data-nl="${c.id}">
+      <div class="nl-q">${escHTML(noteContext(c).slice(0, 80) || '…')}</div>
+      <div class="nl-t">${c.text ? escHTML(c.text) : '<span class="hint">(empty)</span>'}</div>
+      <div class="nl-f"><span>${i >= 0 ? 'p. ' + (pageOf[i] || 1) : ''}</span><button class="lnk" data-nldel="${c.id}">Delete</button></div>
+    </div>`).join('') : `<div class="side-empty">No notes. Right click in the text › Add note.</div>`;
+}
+$('#side-notes').addEventListener('click', async e => {
+  const del = e.target.closest('[data-nldel]');
+  if (del) { e.stopPropagation(); removeNote(del.dataset.nldel); renderNoteList(); return; }
+  const it = e.target.closest('[data-nl]'); if (!it) return;
+  const id = it.dataset.nl;
+  if (S.view !== 'text') setView('text');
+  const c = comments().find(x => x.id === id); if (!c) return;
+  const sp = editor.querySelector(`[data-c="${id}"]`);
+  const el = sp ? blockOf(sp) : [...editor.children].find(x => x.dataset.id === c.block);
+  if (el) el.scrollIntoView({ block: 'center' });
+  if (innerWidth < 1000) $('#side').classList.remove('open');
+  requestAnimationFrame(() => { renderNoteMarks(); openNote(id, false); });
+});
 function openSide(which) {
   $('#side').classList.add('open');
   $$('#side-seg button').forEach(x => x.classList.toggle('on', x.dataset.side === which));
-  ['scenes', 'chars'].forEach(k => $('#side-' + k).classList.toggle('hidden', k !== which));
+  ['scenes', 'chars', 'notes'].forEach(k => $('#side-' + k).classList.toggle('hidden', k !== which));
+  if (which === 'notes') renderNoteList();
   if (S.zoom == null) applyZoom();
 }
 
