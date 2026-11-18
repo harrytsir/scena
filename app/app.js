@@ -93,7 +93,7 @@ function makeDoc(format) {
     id: uid(), app: 'scena', version: 2, title: 'Untitled', format,
     created: Date.now(), updated: Date.now(),
     meta: { subtitle: '', credit: 'Written by', author: prefs.author || '', source: '', contact: prefs.contact || '', draft: '', cast: '' },
-    settings: { paper: prefs.paper || 'A4', font: prefs.font || 'courier', sceneNumbers: false, titlePage: true },
+    settings: { paper: prefs.paper || 'A4', font: prefs.font || 'courier', sceneNumbers: false, titlePage: true, headerTitle: true, footer: prefs.footer || '' },
     blocks: [{ id: uid(), t: 'scene', text: '' }],
     notes: {}
   };
@@ -101,7 +101,7 @@ function makeDoc(format) {
 function normalizeDoc(d) {
   d.format = FORMATS[d.format] ? d.format : 'screen';
   d.meta = Object.assign({ subtitle: '', credit: '', author: '', source: '', contact: '', draft: '', cast: '' }, d.meta || {});
-  d.settings = Object.assign({ paper: 'A4', font: 'courier', sceneNumbers: false, titlePage: true }, d.settings || {});
+  d.settings = Object.assign({ paper: 'A4', font: 'courier', sceneNumbers: false, titlePage: true, headerTitle: true, footer: '' }, d.settings || {});
   d.notes = d.notes || {};
   d.comments = Array.isArray(d.comments) ? d.comments : [];
   // notes from 1.2.0 were attached to a whole line: anchor them to the start of that line
@@ -880,7 +880,9 @@ function layoutPages() {
   // sheets behind the text
   const bg = $('#pagebg');
   let html = '';
-  for (let p = 1; p <= page; p++) html += `<div class="pg" style="top:${(p - 1) * (pageH + PAGE_GAP)}px;height:${pageH}px">${p > 1 ? `<span class="no">${p}.</span>` : ''}</div>`;
+  const hd = S.doc.settings.headerTitle && S.doc.title ? `<span class="hf hd" data-act="settings">${escHTML(S.doc.title)}</span>` : '';
+  const ft = S.doc.settings.footer ? `<span class="hf ft" data-act="settings">${escHTML(S.doc.settings.footer)}</span>` : '';
+  for (let p = 1; p <= page; p++) html += `<div class="pg" style="top:${(p - 1) * (pageH + PAGE_GAP)}px;height:${pageH}px">${hd}${p > 1 ? `<span class="no">${p}.</span>` : ''}${ft}</div>`;
   if (bg._html !== html) { bg.innerHTML = html; bg._html = html; }
   const sh = $('#sheet');
   sh.style.height = (page * pageH + (page - 1) * PAGE_GAP) + 'px';
@@ -1402,6 +1404,10 @@ function settingsDialog() {
       <label>Paper size<select id="f-paper">${Object.entries(PAPER).map(([k, p]) => `<option value="${k}" ${d.settings.paper === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>
       <label class="chk"><input type="checkbox" id="f-sn" ${d.settings.sceneNumbers ? 'checked' : ''}> Scene numbers</label>
       <hr>
+      <label class="chk"><input type="checkbox" id="f-hd" ${d.settings.headerTitle ? 'checked' : ''}> Header: show the title at the top of each page</label>
+      <label>Footer<input id="f-ft" value="${escHTML(d.settings.footer || '')}" placeholder="e.g. © Χ. Τσιρώνης 2026 — leave empty for none"></label>
+      <p class="hint" style="margin-top:-6px">Page numbers stay at the top right, from page 2.</p>
+      <hr>
       <p class="hint">Adapting this project? This creates a <b>new copy</b> as a ${other === 'stage' ? 'stage play' : 'screenplay'}; the original stays as it is.</p>
       <div><button class="btn" data-x="convert">Make a copy as ${other === 'stage' ? 'Stage Play' : 'Screenplay'}</button></div>
     </div>
@@ -1414,6 +1420,9 @@ function settingsDialog() {
       if (x === 'ok') {
         d.settings.font = $('#f-font').value; d.settings.paper = $('#f-paper').value;
         d.settings.sceneNumbers = $('#f-sn').checked;
+        d.settings.headerTitle = $('#f-hd').checked; d.settings.footer = $('#f-ft').value.trim();
+        savePrefs({ footer: d.settings.footer });
+        $('#pagebg')._html = '';
         savePrefs({ font: d.settings.font, paper: d.settings.paper });
         applyFont(); applyZoom();
         if (S.view === 'title') renderTitleView();
@@ -1619,6 +1628,7 @@ document.addEventListener('click', e => {
     case 'toggle-side': $('#side').classList.toggle('open'); if (S.zoom == null) applyZoom(); return;
     case 'style-menu': return styleMenu();
     case 'add-note': return addNote();
+    case 'settings': return settingsDialog();
     case 'tag-menu': return tagButton(b);
     case 'tab': if (document.activeElement !== editor) editor.focus(); return tabCmd(false);
     case 'undo': return undo();
@@ -1638,6 +1648,7 @@ document.addEventListener('click', e => {
 $$('[data-act="undo"], [data-act="redo"], [data-act="tab"], .tb-center [data-act="add-note"], .tb-center [data-act="tag-menu"]').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
 $('#doc-title').addEventListener('input', () => {
   S.doc.title = $('#doc-title').value;
+  layoutSoon();
   document.title = (S.doc.title || 'Untitled') + ' — Scena';
   metaChanged();
 });
@@ -1680,3 +1691,10 @@ if (!Store.native && 'serviceWorker' in navigator && location.protocol === 'http
   }).catch(() => {});
 }
 showLibrary();
+
+// header / footer on the page sheets sit under the editor: a click on them opens Project settings
+$('#sheet').addEventListener('click', e => {
+  if (e.target.closest('.notemark, #notepop')) return;
+  const hit = [...document.querySelectorAll('#pagebg .hf')].find(el => { const r = el.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4; });
+  if (hit) { e.preventDefault(); settingsDialog(); }
+});

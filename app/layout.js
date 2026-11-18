@@ -316,8 +316,10 @@ function buildPrintHTML(doc) {
       body += `<div class="pl" style="${st.join(';')}">${(cs ? runsMarkedHTML(l.runs, cs) : runsHTML(l.runs)) || '&nbsp;'}${num}</div>`;
     });
     const pn = pi === 0 ? '' : `<div class="pnum" style="top:0.5in;right:${MARGIN.right}in">${pi + 1}.</div>`;
-    const hd = cs ? `<div class="cs-hd" style="top:0.5in;left:${MARGIN.left}in">${escHTML((doc.title || '') + ' — ' + cs.title)}</div>` : '';
-    html += `<div class="ppage" style="${pageStyle}">${hd}${pn}<div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${margin ? `<div class="cms">${margin}</div>` : ''}${body}</div></div>`;
+    const htxt = cs ? (doc.title || '') + ' — ' + cs.title : (doc.settings?.headerTitle && doc.title ? doc.title : '');
+    const hd = htxt ? `<div class="${cs ? 'cs-hd' : 'phd'}" style="top:0.5in;left:${MARGIN.left}in;max-width:${geom.textW - 0.6}in">${escHTML(htxt)}</div>` : '';
+    const ftx = doc.settings?.footer ? `<div class="pft" style="bottom:0.5in;left:${MARGIN.left}in;width:${geom.textW}in">${escHTML(doc.settings.footer)}</div>` : '';
+    html += `<div class="ppage" style="${pageStyle}">${hd}${pn}${ftx}<div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${margin ? `<div class="cms">${margin}</div>` : ''}${body}</div></div>`;
   });
   return html;
 }

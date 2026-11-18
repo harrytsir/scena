@@ -412,3 +412,8 @@ body.dark .side-views button.on { background: #2c2c31; }
 .cm-n { background: #fef9c3; }
 .cs-hd { position: absolute; font: 8pt Arial, 'Scena Sans', sans-serif; color: #555; text-transform: uppercase; letter-spacing: .5px; }
 .tp-cue { font-weight: 700; letter-spacing: 1px; }
+/* header / footer on the pages */
+.pagebg .pg .hf { position: absolute; left: 1.5in; max-width: calc(100% - 3.1in); font-family: var(--script-font); font-size: 10pt; line-height: 12pt; color: var(--sheet-ink); opacity: .5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pagebg .pg .hd { top: 0.5in; }
+.pagebg .pg .ft { bottom: 0.5in; }
+.phd, .pft { position: absolute; font-size: 10pt; line-height: 12pt; color: #777; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
