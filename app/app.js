@@ -24,6 +24,7 @@ const IC = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>', download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>', more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', x: '<path d="M18 6L6 18M6 6l12 12"/>', up: '<path d="M18 15l-6-6-6 6"/>', down: '<path d="M6 9l6 6 6-6"/>',
+  note: '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/>',
   left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>'
 };
 const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[n] || ''}</svg>`;
@@ -101,6 +102,8 @@ function normalizeDoc(d) {
   d.meta = Object.assign({ subtitle: '', credit: '', author: '', source: '', contact: '', draft: '', cast: '' }, d.meta || {});
   d.settings = Object.assign({ paper: 'A4', font: 'courier', sceneNumbers: false, titlePage: true }, d.settings || {});
   d.notes = d.notes || {};
+  d.comments = Array.isArray(d.comments) ? d.comments : [];
+  frontPages(d);
   const T = FORMATS[d.format].types;
   d.blocks = (d.blocks || []).map(b => {
     const nb = { id: b.id || uid(), t: T[b.t] ? b.t : FORMATS[d.format].def, text: cleanText(b.text) };
@@ -203,6 +206,7 @@ function loadIntoWorkspace(d) {
   setCaret(editor.children[0], 0);
   editor.focus();
   updateToolbar();
+  renderNotes();
 }
 function applyFont() {
   const f = fontOf(S.doc);
@@ -578,6 +582,7 @@ editor.addEventListener('keydown', e => {
   }
   if (e.key === 'Tab' && !mod && !e.altKey) { e.preventDefault(); tabCmd(e.shiftKey); return; }
   if (e.key === 'F3' && e.shiftKey) { e.preventDefault(); changeCase(); return; }
+  if (mod && e.altKey && e.code === 'KeyM') { e.preventDefault(); addComment(); return; }
   if (mod && !e.altKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
     const k = e.code.slice(5);
     const t = Object.keys(F().types).find(x => F().types[x].key === k);
@@ -826,6 +831,7 @@ function refreshNow() {
   });
   if (S.view === 'text') layoutPages();
   renderSide(); renderStatus();
+  if (!$('#side-notes').classList.contains('hidden') && !$('#side-notes').contains(document.activeElement)) renderNotes();
   if (S.view === 'cards') renderCards();
 }
 /* Pages like Word: measure the real text and push whatever doesn't fit to the next sheet */
@@ -858,6 +864,7 @@ function layoutPages() {
   }
   for (const [el, mt] of moves) el.style.marginTop = mt + 'px';
   S.domPages = { pageOf, count: page };
+  renderNoteMarks();
   // sheets behind the text
   const bg = $('#pagebg');
   let html = '';
@@ -917,18 +924,15 @@ $('#side-chars').addEventListener('click', e => {
   const next = idx.find(i => i > from) ?? idx[0];
   if (next != null) goToBlock(next + 1 < S.doc.blocks.length ? next + 1 : next);
 });
-$('#side-seg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  $$('#side-seg button').forEach(x => x.classList.toggle('on', x === b));
-  $('#side-scenes').classList.toggle('hidden', b.dataset.side !== 'scenes');
-  $('#side-chars').classList.toggle('hidden', b.dataset.side !== 'chars');
-});
+$('#side-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) openSide(b.dataset.side); });
 
 /* ================= CARDS ================= */
+// one card per scene; a play written only in acts gets one card per act
+function unitType() { return S.doc.blocks.some(b => b.t === 'scene') ? 'scene' : 'act'; }
 function units() {
-  const bl = S.doc.blocks, out = [];
+  const bl = S.doc.blocks, out = [], ut = unitType();
   bl.forEach((b, i) => {
-    if (b.t !== 'scene') return;
+    if (b.t !== ut) return;
     let e = i + 1;
     while (e < bl.length && bl[e].t !== 'scene' && bl[e].t !== 'act') e++;
     out.push({ start: i, end: e });
@@ -939,7 +943,7 @@ function renderCards() {
   const bl = S.doc.blocks, us = units(), bp = S.pg ? S.pg.blockPage : [];
   let html = '', num = 0, ui = 0;
   for (let i = 0; i < bl.length; i++) {
-    if (bl[i].t === 'act') html += `<div class="card-act">${escHTML(greekCaps(bl[i].text) || 'ACT')}</div>`;
+    if (bl[i].t === 'act' && unitType() === 'scene') html += `<div class="card-act">${escHTML(greekCaps(bl[i].text) || 'ACT')}</div>`;
     if (ui < us.length && us[ui].start === i) {
       const u = us[ui]; num++;
       const prev = bl.slice(u.start + 1, u.end).filter(x => x.text.trim()).slice(0, 3).map(x => (x.t === 'character' ? greekCaps(x.text) + ': ' : '') + x.text).join(' ').slice(0, 160);
@@ -952,7 +956,10 @@ function renderCards() {
       ui++;
     }
   }
-  $('#cards').innerHTML = html || `<div class="side-empty" style="padding:40px">Cards appear once the script has scenes.</div>`;
+  const sl = F().types.scene.label;
+  $('#cards').innerHTML = html || `<div class="cards-empty"><div class="ce-t">No scenes yet</div>
+    <div class="ce-d">Cards show one card per scene, so you can see the whole story at a glance, write a short summary for each scene and drag scenes into a new order.<br><br>
+    To add a scene, go to <b>Script</b> and set a line to <b>${sl}</b> (press <kbd>Tab</kbd> until it says ${sl}, or <kbd>Ctrl+1</kbd>).</div></div>`;
 }
 function moveRange(start, end, insertAt) {
   const bl = S.doc.blocks, chunk = bl.slice(start, end);
@@ -987,38 +994,159 @@ $('#cards').addEventListener('drop', e => {
   dragU = null;
 });
 
-/* ================= TITLE PAGE ================= */
+/* ================= TITLE & NOTES ================= */
+const FRONT = {
+  title:     { label: 'Title page' },
+  cast:      { label: 'Characters', stage: true },
+  note:      { label: 'Author’s note', h: { el: 'ΣΗΜΕΙΩΜΑ', en: 'AUTHOR’S NOTE' }, ph: 'A note to the reader, director or company — why you wrote it, how it should be staged, anything you want them to know.' },
+  logline:   { label: 'Logline & tagline' },
+  synopsis:  { label: 'Synopsis', h: { el: 'ΠΕΡΙΛΗΨΗ', en: 'SYNOPSIS' }, ph: 'The story in a few paragraphs, beginning to end.' },
+  treatment: { label: 'Treatment', h: { el: 'TREATMENT', en: 'TREATMENT' }, ph: 'The story told in prose, scene by scene, in the present tense.' }
+};
+function frontPages(d) {
+  const P = d.pages = d.pages || {};
+  P.note = Object.assign({ text: '', include: true }, P.note);
+  P.logline = Object.assign({ logline: '', tagline: '', include: false }, P.logline);
+  P.synopsis = Object.assign({ text: '', include: false }, P.synopsis);
+  P.treatment = Object.assign({ text: '', include: false }, P.treatment);
+  return P;
+}
+const hasFront = (d, k) => { const P = frontPages(d); return k === 'logline' ? !!(P.logline.logline.trim() || P.logline.tagline.trim()) : !!(P[k] && P[k].text.trim()); };
 function renderTitleView() {
   const d = S.doc, m = d.meta, p = PAPER[d.settings.paper] || PAPER.A4;
-  const box = $('#titleview');
-  const sheet = (inner) => `<div class="sheet" style="width:${p.w}in;height:${p.h}in;font-family:var(--script-font)">${inner}</div>`;
-  const inp = (k, ph, style, cls = 'center') => `<input class="tp-edit ${cls}" data-tp="${k}" value="${escHTML(k === 'title' ? d.title : m[k] || '')}" placeholder="${ph}" style="${style}">`;
+  const P = frontPages(d);
+  const sec = S.front && FRONT[S.front] && !(FRONT[S.front].stage && d.format !== 'stage') ? S.front : 'title';
+  S.front = sec;
+  const nav = Object.entries(FRONT).filter(([, f]) => !f.stage || d.format === 'stage').map(([k, f]) => {
+    const dot = (k === 'title') || (k === 'cast' ? !!m.cast.trim() : hasFront(d, k));
+    return `<button data-front="${k}" class="${k === sec ? 'on' : ''}"><span>${f.label}</span>${dot ? '<i class="dot"></i>' : ''}</button>`;
+  }).join('');
+  const sheet = (inner, cls = '') => `<div class="sheet ${cls}" style="width:${p.w}in;${cls ? 'min-height' : 'height'}:${p.h}in;font-family:var(--script-font)">${inner}</div>`;
+  const inp = (k, ph, style, c = 'center') => `<input class="tp-edit ${c}" data-tp="${k}" value="${escHTML(k === 'title' ? d.title : m[k] || '')}" placeholder="${ph}" style="${style}">`;
   const ta = (k, ph, style, rows) => `<textarea class="tp-edit" data-tp="${k}" rows="${rows}" placeholder="${ph}" style="${style}">${escHTML(m[k] || '')}</textarea>`;
-  let html = sheet(
-    inp('title', 'TITLE', 'top:3.2in', 'center title') +
-    inp('subtitle', 'Subtitle (optional)', 'top:3.55in') +
-    inp('credit', 'Written by', 'top:4.05in') +
-    `<textarea class="tp-edit center" data-tp="author" rows="2" placeholder="Author" style="top:4.4in">${escHTML(m.author)}</textarea>` +
-    inp('source', 'Based on… (optional)', 'top:5.1in') +
-    ta('contact', 'Contact details\n(name, phone, email)', `left:1.5in;bottom:0.9in;width:3in;text-align:left`, 4) +
-    ta('draft', 'Draft / date', `right:1in;bottom:0.9in;width:2.4in;text-align:right`, 3)
-  );
-  if (d.format === 'stage') {
-    html += `<div class="tv-label" style="--sheetw:${p.w}in">Characters page</div>` + sheet(
+  const incl = (k, on, what) => `<label class="fv-incl"><input type="checkbox" data-incl="${k}" ${on ? 'checked' : ''}> Include ${what} in PDF &amp; Word exports</label>`;
+  let body = '';
+  if (sec === 'title') {
+    body = incl('title', d.settings.titlePage, 'the title page') + sheet(
+      inp('title', 'TITLE', 'top:3.2in', 'center title') +
+      inp('subtitle', 'Subtitle (optional)', 'top:3.55in') +
+      inp('credit', 'Written by', 'top:4.05in') +
+      `<textarea class="tp-edit center" data-tp="author" rows="2" placeholder="Author" style="top:4.4in">${escHTML(m.author)}</textarea>` +
+      inp('source', 'Based on… (optional)', 'top:5.1in') +
+      ta('contact', 'Contact details\n(name, phone, email)', 'left:1.5in;bottom:0.9in;width:3in;text-align:left', 4) +
+      ta('draft', 'Draft / date', 'right:1in;bottom:0.9in;width:2.4in;text-align:right', 3));
+  } else if (sec === 'cast') {
+    body = `<p class="fv-help">Printed on its own page after the title page, when filled in.</p>` + sheet(
       `<div class="tp-edit center" style="top:1in;border:0;text-decoration:underline">${WORDS[docLang(d)].cast}</div>` +
-      ta('cast', 'One character per line, e.g.\nΓΕΝ – artificial intelligence\nΕΛΕΝΗ – scientist, 40', 'left:1.5in;right:1in;top:1.6in;height:8in;width:auto', 30)
-    );
+      ta('cast', 'One character per line, e.g.\nΓΕΝ – artificial intelligence\nΕΛΕΝΗ – scientist, 40', 'left:1.5in;right:1in;top:1.6in;height:8in;width:auto', 30));
+  } else if (sec === 'logline') {
+    body = incl('logline', P.logline.include, 'this page') + sheet(`<div class="fv-flow">
+      <div class="fv-h">LOGLINE</div><textarea class="fv-ta" data-pg="logline.logline" rows="3" placeholder="One or two sentences: who wants what, what stands in the way, what is at stake.">${escHTML(P.logline.logline)}</textarea>
+      <div class="fv-h" style="margin-top:24pt">TAGLINE</div><textarea class="fv-ta" data-pg="logline.tagline" rows="2" placeholder="A short, catchy line for a poster.">${escHTML(P.logline.tagline)}</textarea></div>`, 'grow');
+  } else {
+    const f = FRONT[sec];
+    body = incl(sec, P[sec].include, 'this page') + sheet(`<div class="fv-flow"><div class="fv-h">${f.h[docLang(d)]}</div>
+      <textarea class="fv-ta" data-pg="${sec}.text" placeholder="${escHTML(f.ph)}">${escHTML(P[sec].text)}</textarea></div>`, 'grow');
   }
-  html += `<p class="tv-hint">${d.settings.titlePage ? 'The title page is included when you export.' : 'The title page is currently left out of exports (Project settings).'}</p>`;
-  box.innerHTML = html;
+  $('#titleview').innerHTML = `<div class="fv"><nav class="fv-nav">${nav}</nav><div class="fv-main">${body}</div></div>`;
+  $$('#titleview .fv-ta').forEach(autoGrow);
 }
+function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 40) + 'px'; }
+$('#titleview').addEventListener('click', e => {
+  const b = e.target.closest('[data-front]'); if (!b) return;
+  S.front = b.dataset.front; renderTitleView();
+});
+$('#titleview').addEventListener('change', e => {
+  const k = e.target.dataset.incl; if (!k) return;
+  if (k === 'title') S.doc.settings.titlePage = e.target.checked; else frontPages(S.doc)[k].include = e.target.checked;
+  metaChanged();
+});
 $('#titleview').addEventListener('input', e => {
+  const pg = e.target.dataset.pg;
+  if (pg) {
+    const [k, f] = pg.split('.'); frontPages(S.doc)[k][f] = e.target.value; autoGrow(e.target); metaChanged();
+    const btn = $(`#titleview [data-front="${k}"]`);
+    if (btn) { const has = hasFront(S.doc, k); const dot = btn.querySelector('.dot'); if (has && !dot) btn.insertAdjacentHTML('beforeend', '<i class="dot"></i>'); if (!has && dot) dot.remove(); }
+    return;
+  }
   const k = e.target.dataset.tp; if (!k) return;
   if (k === 'title') { S.doc.title = e.target.value; $('#doc-title').value = S.doc.title; document.title = (S.doc.title || 'Untitled') + ' — Scena'; }
   else S.doc.meta[k] = e.target.value;
   if (k === 'author' || k === 'contact') savePrefs({ [k]: e.target.value });
   metaChanged();
 });
+
+/* ================= NOTES IN THE SCRIPT ================= */
+const comments = () => (S.doc.comments = S.doc.comments || []);
+function addComment() {
+  if (S.view !== 'text') setView('text');
+  const ci = caretInfo();
+  const el = ci ? ci.el : (S.lastBlock && S.lastBlock.isConnected ? S.lastBlock : editor.firstElementChild);
+  if (!el) return;
+  syncFromDOM();
+  const sel = getSelection().toString().replace(/\s+/g, ' ').trim();
+  const c = { id: uid(), block: el.dataset.id, quote: (sel || elText(el)).slice(0, 120), text: '', at: Date.now(), done: false };
+  comments().push(c);
+  metaChanged();
+  openSide('notes');
+  renderNotes(c.id);
+  layoutPages();
+}
+function renderNotes(focusId) {
+  if (!S.doc) return;
+  const order = new Map(S.doc.blocks.map((b, i) => [b.id, i]));
+  const pageOf = (S.domPages && S.domPages.pageOf) || [];
+  const list = comments().slice().sort((a, b) => (a.done - b.done) || ((order.get(a.block) ?? 1e9) - (order.get(b.block) ?? 1e9)));
+  const open = list.filter(c => !c.done).length;
+  $('#side-seg [data-side="notes"]').innerHTML = 'Notes' + (open ? ` <span class="cnt">${open}</span>` : '');
+  $('#side-notes').innerHTML = `<button class="btn small note-add" data-act="add-note">${icon('plus')}Add note here</button>` + (list.length ? list.map(c => {
+    const i = order.get(c.block);
+    const where = i == null ? 'text removed' : 'p. ' + (pageOf[i] || '?');
+    return `<div class="note${c.done ? ' done' : ''}" data-cid="${c.id}">
+      <div class="note-q" data-go-note="${c.id}" title="Go to this place">${escHTML(c.quote || '…')}</div>
+      <textarea data-ctext="${c.id}" rows="2" placeholder="Write a note…">${escHTML(c.text)}</textarea>
+      <div class="note-f"><span>${where} · ${fmtDate(c.at)}</span><span><button class="lnk" data-cdone="${c.id}">${c.done ? 'Reopen' : 'Done'}</button><button class="lnk" data-cdel="${c.id}">Delete</button></span></div>
+    </div>`;
+  }).join('') : `<div class="side-empty">No notes yet. Put the cursor where you want one and press <b>Add note here</b> (or <kbd>Ctrl+Alt+M</kbd>).</div>`);
+  $$('#side-notes textarea').forEach(autoGrow);
+  if (focusId) { const t = $(`#side-notes [data-ctext="${focusId}"]`); if (t) { t.focus(); t.closest('.note').scrollIntoView({ block: 'nearest' }); } }
+}
+$('#side-notes').addEventListener('input', e => {
+  const id = e.target.dataset.ctext; if (!id) return;
+  const c = comments().find(x => x.id === id); if (c) { c.text = e.target.value; autoGrow(e.target); metaChanged(); }
+});
+$('#side-notes').addEventListener('click', async e => {
+  const go = e.target.closest('[data-go-note]');
+  if (go) { const c = comments().find(x => x.id === go.dataset.goNote); const i = c ? S.doc.blocks.findIndex(b => b.id === c.block) : -1; if (i >= 0) goToBlock(i); flashNote(c.id); return; }
+  const dn = e.target.closest('[data-cdone]');
+  if (dn) { const c = comments().find(x => x.id === dn.dataset.cdone); if (c) { c.done = !c.done; metaChanged(); renderNotes(); layoutPages(); } return; }
+  const dl = e.target.closest('[data-cdel]');
+  if (dl) { const c = comments().find(x => x.id === dl.dataset.cdel); if (c && (!c.text.trim() || await confirmModal('Delete this note?', 'Delete', true))) { S.doc.comments = comments().filter(x => x !== c); metaChanged(); renderNotes(); layoutPages(); } }
+});
+function flashNote(id) { const n = $(`#side-notes [data-cid="${id}"]`); if (n) { n.classList.add('flash'); setTimeout(() => n.classList.remove('flash'), 900); } }
+function renderNoteMarks() {
+  const box = $('#notemarks'); if (!box || !S.doc) return;
+  const byBlock = new Map();
+  for (const c of comments()) if (!c.done) byBlock.set(c.block, (byBlock.get(c.block) || []).concat(c));
+  let html = '';
+  for (const el of editor.children) {
+    const cs = byBlock.get(el.dataset.id); if (!cs) continue;
+    html += `<button class="nmark" style="top:${el.offsetTop}px" data-nm="${cs[0].id}" title="${escHTML(cs.map(c => c.text || '(empty note)').join(' · '))}">${cs.length > 1 ? cs.length : ''}</button>`;
+  }
+  if (box._h !== html) { box.innerHTML = html; box._h = html; }
+}
+$('#sheet').addEventListener('click', e => {
+  const m = e.target.closest('[data-nm]'); if (!m) return;
+  openSide('notes'); renderNotes(); flashNote(m.dataset.nm);
+  const t = $(`#side-notes [data-ctext="${m.dataset.nm}"]`); if (t) { t.closest('.note').scrollIntoView({ block: 'nearest' }); }
+});
+function openSide(which) {
+  $('#side').classList.add('open');
+  $$('#side-seg button').forEach(x => x.classList.toggle('on', x.dataset.side === which));
+  ['scenes', 'chars', 'notes'].forEach(k => $('#side-' + k).classList.toggle('hidden', k !== which));
+  if (which === 'notes') renderNotes();
+  if (S.zoom == null) applyZoom();
+}
 
 function setView(v) {
   if (S.view === 'text' && v !== 'text' && S.doc) syncFromDOM();
@@ -1032,6 +1160,7 @@ function setView(v) {
   closeAC(); closePop();
   if (v === 'cards') { S.pg = paginate(S.doc); renderCards(); }
   if (v === 'title') renderTitleView();
+  if (v !== 'title') S.front = S.front || 'title';
   if (v === 'text') { editor.focus(); layoutPages(); }
 }
 $('#view-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
@@ -1177,6 +1306,7 @@ function helpDialog() {
       <tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Change the element. On a new empty line, Tab first picks what usually comes next (Character → Dialogue), then cycles.</td></tr>
       <tr><td>${keys.map(k => `<kbd>Ctrl+${T[k].key}</kbd>`).join(' ')}</td><td>${keys.map(k => T[k].label).join(' · ')}</td></tr>
       <tr><td><kbd>Ctrl+B</kbd> <kbd>Ctrl+I</kbd> <kbd>Ctrl+U</kbd></td><td>Bold, italic, underline</td></tr>
+      <tr><td><kbd>Ctrl+Alt+M</kbd></td><td>Add a note at the cursor (notes are never exported)</td></tr>
       <tr><td><kbd>Shift+F3</kbd></td><td>Change case of the selection or line: UPPER → lower → Sentence</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a suggestion (characters, locations, time of day)</td></tr>
       <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo</td></tr>
@@ -1280,6 +1410,7 @@ document.addEventListener('click', e => {
     case 'home': return showLibrary();
     case 'toggle-side': $('#side').classList.toggle('open'); if (S.zoom == null) applyZoom(); return;
     case 'style-menu': return styleMenu();
+    case 'add-note': return addComment();
     case 'tab': if (document.activeElement !== editor) editor.focus(); return tabCmd(false);
     case 'undo': return undo();
     case 'redo': return redo();
@@ -1295,7 +1426,7 @@ document.addEventListener('click', e => {
     case 'more-menu': return moreMenu(b);
   }
 });
-$$('[data-act="undo"], [data-act="redo"], [data-act="tab"]').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
+$$('[data-act="undo"], [data-act="redo"], [data-act="tab"], .tb-center [data-act="add-note"]').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
 $('#doc-title').addEventListener('input', () => {
   S.doc.title = $('#doc-title').value;
   document.title = (S.doc.title || 'Untitled') + ' — Scena';

@@ -288,6 +288,7 @@ function buildPrintHTML(doc) {
     c += `</div>`;
     html += `<div class="ppage" style="${pageStyle}">${c}</div>`;
   }
+  html += frontMatterHTML(doc, pageStyle, geom);
   const showNums = !!doc.settings?.sceneNumbers;
   pages.forEach((lines, pi) => {
     let body = '';
@@ -303,5 +304,44 @@ function buildPrintHTML(doc) {
     const pn = pi === 0 ? '' : `<div class="pnum" style="top:0.5in;right:${MARGIN.right}in">${pi + 1}.</div>`;
     html += `<div class="ppage" style="${pageStyle}">${pn}<div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${body}</div></div>`;
   });
+  return html;
+}
+
+/* Author's note, logline, synopsis, treatment: own pages, unnumbered, only when chosen */
+const FRONT_HEAD = {
+  note: { el: 'ΣΗΜΕΙΩΜΑ', en: 'AUTHOR’S NOTE' }, synopsis: { el: 'ΠΕΡΙΛΗΨΗ', en: 'SYNOPSIS' }, treatment: { el: 'TREATMENT', en: 'TREATMENT' }
+};
+function frontSections(doc) {
+  const P = doc.pages || {}, lang = docLang(doc), out = [];
+  if (P.note && P.note.include && P.note.text.trim()) out.push([{ h: FRONT_HEAD.note[lang], text: P.note.text }]);
+  if (P.logline && P.logline.include && (P.logline.logline.trim() || P.logline.tagline.trim())) {
+    const s = [];
+    if (P.logline.logline.trim()) s.push({ h: 'LOGLINE', text: P.logline.logline });
+    if (P.logline.tagline.trim()) s.push({ h: 'TAGLINE', text: P.logline.tagline });
+    out.push(s);
+  }
+  for (const k of ['synopsis', 'treatment']) if (P[k] && P[k].include && P[k].text.trim()) out.push([{ h: FRONT_HEAD[k][lang], text: P[k].text }]);
+  return out;
+}
+function frontMatterHTML(doc, pageStyle, geom) {
+  const L = geom.lines, lh = 1 / LPI, font = fontOf(doc);
+  const meas = measurer(font.css, false);
+  let html = '';
+  for (const sec of frontSections(doc)) {
+    const lines = [];
+    sec.forEach((part, pi) => {
+      if (pi) lines.push(null, null, null);
+      lines.push({ t: part.h, center: true }, null, null);
+      part.text.replace(/\r/g, '').split('\n').forEach((para, k, arr) => {
+        if (!para.trim()) { lines.push(null); return; }
+        for (const r of wrapRanges(para, geom.textW * 96, meas)) lines.push({ t: para.slice(r.a, r.b) });
+      });
+    });
+    for (let i = 0; i < lines.length; i += L) {
+      const chunk = lines.slice(i, i + L);
+      const body = chunk.map(l => l ? `<div class="pl" style="height:${lh}in;width:${geom.textW}in;${l.center ? 'text-align:center;text-decoration:underline' : ''}">${escHTML(l.t) || '&nbsp;'}</div>` : `<div class="pl" style="height:${lh}in"></div>`).join('');
+      html += `<div class="ppage" style="${pageStyle}"><div class="pbody" style="left:${MARGIN.left}in;top:${MARGIN.top}in;width:${geom.textW}in">${body}</div></div>`;
+    }
+  }
   return html;
 }

@@ -42,12 +42,14 @@
       <button class="ib fmt" data-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
       <button class="ib fmt" data-fmt="italic" title="Italic (Ctrl+I)"><em class="serif-i">I</em></button>
       <button class="ib fmt" data-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+      <span class="sep"></span>
+      <button class="ib" data-act="add-note" title="Add note (Ctrl+Alt+M)"><i data-ic="note"></i></button>
     </div>
     <div class="tb-right">
       <div class="seg" id="view-seg">
         <button data-view="text" class="on">Script</button>
         <button data-view="cards">Cards</button>
-        <button data-view="title">Title page</button>
+        <button data-view="title">Title &amp; notes</button>
       </div>
       <button class="ib" data-act="undo" title="Undo (Ctrl+Z)"><i data-ic="undo"></i></button>
       <button class="ib" data-act="redo" title="Redo (Ctrl+Y)"><i data-ic="redo"></i></button>
@@ -62,9 +64,11 @@
       <div class="side-tabs" id="side-seg">
         <button data-side="scenes" class="on">Scenes</button>
         <button data-side="chars">Characters</button>
+        <button data-side="notes">Notes</button>
       </div>
       <div id="side-scenes" class="side-list"></div>
       <div id="side-chars" class="side-list hidden"></div>
+      <div id="side-notes" class="side-list hidden"></div>
     </aside>
 
     <main id="scroller" class="scroller">
@@ -81,6 +85,7 @@
       <div id="sheet-wrap" class="sheet-wrap">
         <div id="sheet" class="sheet pages">
           <div id="pagebg" class="pagebg" aria-hidden="true"></div>
+          <div id="notemarks" class="notemarks"></div>
           <div id="editor" class="editor" contenteditable="true" spellcheck="true" lang="el"></div>
         </div>
       </div>

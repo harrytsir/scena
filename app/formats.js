@@ -234,21 +234,31 @@ ${tp.join('\n')}
     const m = doc.meta || {};
     let body = '';
     const hasTP = doc.settings?.titlePage !== false;
+    const front = [];
     if (hasTP) {
-      body += cp(greekCaps(doc.title || ''), 'center', 4320).replace('<w:t', '<w:t').replace(/<w:r>/, '<w:r><w:rPr><w:b/><w:u w:val="single"/></w:rPr>');
-      if (m.subtitle) body += cp(m.subtitle);
-      if (m.credit) body += cp(m.credit, 'center', 480);
-      if (m.author) body += cp(m.author, 'center', 240);
-      if (m.source) body += cp(m.source, 'center', 480);
+      let t = cp(greekCaps(doc.title || ''), 'center', 4320).replace(/<w:r>/, '<w:r><w:rPr><w:b/><w:u w:val="single"/></w:rPr>');
+      if (m.subtitle) t += cp(m.subtitle);
+      if (m.credit) t += cp(m.credit, 'center', 480);
+      if (m.author) m.author.split('\n').forEach((l, i) => { t += cp(l, 'center', i ? 0 : 240); });
+      if (m.source) t += cp(m.source, 'center', 480);
       const bottom = [...(m.contact || '').split('\n'), ...(m.draft ? ['', ...m.draft.split('\n')] : [])].filter((l, i, a) => l || i < a.length - 1);
-      bottom.forEach((l, i) => { body += cp(l, 'left', i === 0 ? 4320 : 0); });
-      body += `<w:p><w:pPr>${sect('', false)}</w:pPr></w:p>`;
+      bottom.forEach((l, i) => { t += cp(l, 'left', i === 0 ? 4320 : 0); });
+      front.push(t);
     }
     if (fmt === 'stage' && m.cast && m.cast.trim()) {
-      body += cp(WORDS[docLang(doc)].cast, 'center', 0).replace(/<w:r>/, '<w:r><w:rPr><w:u w:val="single"/></w:rPr>');
-      m.cast.split('\n').forEach((l, i) => { body += cp(l, 'left', i === 0 ? 480 : 0); });
-      body += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+      let t = cp(WORDS[docLang(doc)].cast, 'center', 0).replace(/<w:r>/, '<w:r><w:rPr><w:u w:val="single"/></w:rPr>');
+      m.cast.split('\n').forEach((l, i) => { t += cp(l, 'left', i === 0 ? 480 : 0); });
+      front.push(t);
     }
+    for (const sec of frontSections(doc)) {
+      let t = '';
+      sec.forEach((part, pi) => {
+        t += cp(part.h, 'center', pi ? 720 : 0).replace(/<w:r>/, '<w:r><w:rPr><w:u w:val="single"/></w:rPr>');
+        part.text.replace(/\r/g, '').split('\n').forEach((l, i) => { t += cp(l, 'left', i === 0 ? 480 : 0); });
+      });
+      front.push(t);
+    }
+    if (front.length) body += front.join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>') + `<w:p><w:pPr>${sect('', false)}</w:pPr></w:p>`;
     let first = true;
     for (const b of doc.blocks) {
       const sp = typeSpec(fmt, b.t);

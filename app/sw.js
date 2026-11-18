@@ -1,5 +1,5 @@
 /* Scena — offline support on the tablet */
-const CACHE = 'scena-1.1.3';
+const CACHE = 'scena-1.2.0';
 const ASSETS = [
   './', './index.html', './style.css', './store.js', './layout.js', './zip.js', './formats.js', './app.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',
