@@ -103,6 +103,15 @@ function normalizeDoc(d) {
   d.settings = Object.assign({ paper: 'A4', font: 'courier', sceneNumbers: false, titlePage: true }, d.settings || {});
   d.notes = d.notes || {};
   d.comments = Array.isArray(d.comments) ? d.comments : [];
+  // notes from 1.2.0 were attached to a whole line: anchor them to the start of that line
+  d.comments = d.comments.filter(c => {
+    if (/^[prqb]/.test(c.id) && !('done' in c)) return true;
+    if (c.done) return false;
+    const b = (d.blocks || []).find(x => x.id === c.block); if (!b) return false;
+    const nid = (b.text ? 'p' : 'b') + c.id;
+    if (b.text) { const runs = runsOf(b); setBlockRuns(b, [...sliceRuns(runs, 0, 1).map(r => ({ ...r, c: nid })), ...sliceRuns(runs, 1, b.text.length)]); }
+    c.id = nid; delete c.done; delete c.quote; return true;
+  });
   frontPages(d);
   const T = FORMATS[d.format].types;
   d.blocks = (d.blocks || []).map(b => {
@@ -206,7 +215,6 @@ function loadIntoWorkspace(d) {
   setCaret(editor.children[0], 0);
   editor.focus();
   updateToolbar();
-  renderNotes();
 }
 function applyFont() {
   const f = fontOf(S.doc);
@@ -215,7 +223,7 @@ function applyFont() {
 
 /* ================= EDITOR DOM ================= */
 function setRuns(el, runs) {
-  const html = runsHTML(normRuns(runs));
+  const html = runsHTML(normRuns(runs), true);
   if (html) el.innerHTML = html; else el.innerHTML = '<br>';
 }
 function setText(el, text) { setRuns(el, plainRuns(text)); }
@@ -243,6 +251,7 @@ function domToRuns(el) {
       if (tag === 'B' || tag === 'STRONG') s.b = 1;
       if (tag === 'I' || tag === 'EM') s.i = 1;
       if (tag === 'U') s.u = 1;
+      if (tag === 'SPAN' && c.dataset && c.dataset.c) s.c = c.dataset.c;
       if (c.style) {
         const fw = c.style.fontWeight; if (fw === 'bold' || +fw >= 600) s.b = 1; else if (fw === 'normal' || (fw && +fw < 600)) delete s.b;
         if (c.style.fontStyle === 'italic') s.i = 1; else if (c.style.fontStyle === 'normal') delete s.i;
@@ -259,7 +268,8 @@ function isClean(el) {
   const kids = el.childNodes;
   for (const n of kids) {
     if (n.nodeType === 3) continue;
-    if (n.nodeType !== 1 || !CLEAN_OK.has(n.nodeName) || n.attributes.length) return false;
+    const noteSpan = n.nodeType === 1 && n.nodeName === 'SPAN' && n.attributes.length === 1 && n.hasAttribute('data-c');
+    if (!noteSpan && (n.nodeType !== 1 || !CLEAN_OK.has(n.nodeName) || n.attributes.length)) return false;
     if (n.nodeName === 'BR' && kids.length > 1) return false;
     if (n.nodeName !== 'BR' && !isClean(n)) return false;
   }
@@ -582,7 +592,7 @@ editor.addEventListener('keydown', e => {
   }
   if (e.key === 'Tab' && !mod && !e.altKey) { e.preventDefault(); tabCmd(e.shiftKey); return; }
   if (e.key === 'F3' && e.shiftKey) { e.preventDefault(); changeCase(); return; }
-  if (mod && e.altKey && e.code === 'KeyM') { e.preventDefault(); addComment(); return; }
+  if (mod && e.altKey && e.code === 'KeyM') { e.preventDefault(); addNote(); return; }
   if (mod && !e.altKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
     const k = e.code.slice(5);
     const t = Object.keys(F().types).find(x => F().types[x].key === k);
@@ -831,7 +841,6 @@ function refreshNow() {
   });
   if (S.view === 'text') layoutPages();
   renderSide(); renderStatus();
-  if (!$('#side-notes').classList.contains('hidden') && !$('#side-notes').contains(document.activeElement)) renderNotes();
   if (S.view === 'cards') renderCards();
 }
 /* Pages like Word: measure the real text and push whatever doesn't fit to the next sheet */
@@ -1072,75 +1081,143 @@ $('#titleview').addEventListener('input', e => {
   metaChanged();
 });
 
-/* ================= NOTES IN THE SCRIPT ================= */
+/* ================= NOTES (like Word comments) =================
+   A note is anchored in the text itself: a selected word/phrase gets a yellow highlight,
+   a note without a selection marks the spot. A yellow icon shows it until it is deleted. */
 const comments = () => (S.doc.comments = S.doc.comments || []);
-function addComment() {
-  if (S.view !== 'text') setView('text');
-  const ci = caretInfo();
-  const el = ci ? ci.el : (S.lastBlock && S.lastBlock.isConnected ? S.lastBlock : editor.firstElementChild);
-  if (!el) return;
-  syncFromDOM();
-  const sel = getSelection().toString().replace(/\s+/g, ' ').trim();
-  const c = { id: uid(), block: el.dataset.id, quote: (sel || elText(el)).slice(0, 120), text: '', at: Date.now(), done: false };
-  comments().push(c);
-  metaChanged();
-  openSide('notes');
-  renderNotes(c.id);
-  layoutPages();
+let ctxRange = null;
+function rangeAt(x, y) {
+  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+  const p = document.caretPositionFromPoint && document.caretPositionFromPoint(x, y);
+  if (!p) return null; const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r;
 }
-function renderNotes(focusId) {
+function offIn(el, node, off) { const r = document.createRange(); r.selectNodeContents(el); r.setEnd(node, off); return r.toString().length; }
+function addNote(range) {
   if (!S.doc) return;
-  const order = new Map(S.doc.blocks.map((b, i) => [b.id, i]));
-  const pageOf = (S.domPages && S.domPages.pageOf) || [];
-  const list = comments().slice().sort((a, b) => (a.done - b.done) || ((order.get(a.block) ?? 1e9) - (order.get(b.block) ?? 1e9)));
-  const open = list.filter(c => !c.done).length;
-  $('#side-seg [data-side="notes"]').innerHTML = 'Notes' + (open ? ` <span class="cnt">${open}</span>` : '');
-  $('#side-notes').innerHTML = `<button class="btn small note-add" data-act="add-note">${icon('plus')}Add note here</button>` + (list.length ? list.map(c => {
-    const i = order.get(c.block);
-    const where = i == null ? 'text removed' : 'p. ' + (pageOf[i] || '?');
-    return `<div class="note${c.done ? ' done' : ''}" data-cid="${c.id}">
-      <div class="note-q" data-go-note="${c.id}" title="Go to this place">${escHTML(c.quote || '…')}</div>
-      <textarea data-ctext="${c.id}" rows="2" placeholder="Write a note…">${escHTML(c.text)}</textarea>
-      <div class="note-f"><span>${where} · ${fmtDate(c.at)}</span><span><button class="lnk" data-cdone="${c.id}">${c.done ? 'Reopen' : 'Done'}</button><button class="lnk" data-cdel="${c.id}">Delete</button></span></div>
-    </div>`;
-  }).join('') : `<div class="side-empty">No notes yet. Put the cursor where you want one and press <b>Add note here</b> (or <kbd>Ctrl+Alt+M</kbd>).</div>`);
-  $$('#side-notes textarea').forEach(autoGrow);
-  if (focusId) { const t = $(`#side-notes [data-ctext="${focusId}"]`); if (t) { t.focus(); t.closest('.note').scrollIntoView({ block: 'nearest' }); } }
+  if (S.view !== 'text') setView('text');
+  const sel = getSelection();
+  range = range || (sel.rangeCount ? sel.getRangeAt(0) : null);
+  let a = range && blockOf(range.startContainer), z = range && blockOf(range.endContainer);
+  if (!a) { a = z = (S.lastBlock && S.lastBlock.isConnected) ? S.lastBlock : editor.firstElementChild; range = null; }
+  if (!z) z = a;
+  syncFromDOM(); commitNow();
+  let id, anchorEl = a;
+  if (range && !range.collapsed && range.toString().trim()) {
+    id = 'r' + uid();
+    for (let el = a; el; el = el.nextElementSibling) {
+      const runs = domToRuns(el), len = elText(el).length;
+      const s0 = el === a ? offIn(el, range.startContainer, range.startOffset) : 0;
+      const s1 = el === z ? offIn(el, range.endContainer, range.endOffset) : len;
+      if (s1 > s0) setRuns(el, [...sliceRuns(runs, 0, s0), ...sliceRuns(runs, s0, s1).map(r => ({ ...r, c: id })), ...sliceRuns(runs, s1, len)]);
+      if (el === z) break;
+    }
+    anchorEl = z;
+  } else {
+    const len = elText(a).length;
+    const off = range ? offIn(a, range.startContainer, range.startOffset) : len;
+    if (!len) { id = 'b' + uid(); }
+    else {
+      const at = off < len ? off : len - 1;
+      id = (off < len ? 'p' : 'q') + uid();          // p = note before this character, q = after it
+      const runs = domToRuns(a);
+      setRuns(a, [...sliceRuns(runs, 0, at), ...sliceRuns(runs, at, at + 1).map(r => ({ ...r, c: id })), ...sliceRuns(runs, at + 1, len)]);
+    }
+  }
+  comments().push({ id, block: anchorEl.dataset.id, text: '', at: Date.now() });
+  syncFromDOM(); commitNow(); docChanged(false); layoutPages();
+  getSelection().removeAllRanges();
+  openNote(id, true);
 }
-$('#side-notes').addEventListener('input', e => {
-  const id = e.target.dataset.ctext; if (!id) return;
-  const c = comments().find(x => x.id === id); if (c) { c.text = e.target.value; autoGrow(e.target); metaChanged(); }
-});
-$('#side-notes').addEventListener('click', async e => {
-  const go = e.target.closest('[data-go-note]');
-  if (go) { const c = comments().find(x => x.id === go.dataset.goNote); const i = c ? S.doc.blocks.findIndex(b => b.id === c.block) : -1; if (i >= 0) goToBlock(i); flashNote(c.id); return; }
-  const dn = e.target.closest('[data-cdone]');
-  if (dn) { const c = comments().find(x => x.id === dn.dataset.cdone); if (c) { c.done = !c.done; metaChanged(); renderNotes(); layoutPages(); } return; }
-  const dl = e.target.closest('[data-cdel]');
-  if (dl) { const c = comments().find(x => x.id === dl.dataset.cdel); if (c && (!c.text.trim() || await confirmModal('Delete this note?', 'Delete', true))) { S.doc.comments = comments().filter(x => x !== c); metaChanged(); renderNotes(); layoutPages(); } }
-});
-function flashNote(id) { const n = $(`#side-notes [data-cid="${id}"]`); if (n) { n.classList.add('flash'); setTimeout(() => n.classList.remove('flash'), 900); } }
+function removeNote(id) {
+  S.doc.comments = comments().filter(c => c.id !== id);
+  for (const el of editor.querySelectorAll(`[data-c="${id}"]`)) {
+    const b = blockOf(el); if (!b) continue;
+    setRuns(b, domToRuns(b).map(r => { if (r.c === id) { const n = { ...r }; delete n.c; return n; } return r; }));
+  }
+  syncFromDOM(); commitNow(); docChanged(false); renderNoteMarks();
+}
+function noteSpot(c) {
+  const spans = editor.querySelectorAll(`[data-c="${c.id}"]`);
+  let rect = null, right = false;
+  if (spans.length) {
+    const sp = c.id[0] === 'p' ? spans[0] : spans[spans.length - 1];
+    const r = document.createRange(); r.selectNodeContents(sp);
+    const rs = r.getClientRects(); rect = c.id[0] === 'p' ? rs[0] : rs[rs.length - 1];
+    right = c.id[0] !== 'p';
+  } else if (c.id[0] === 'b') {
+    const el = [...editor.children].find(e => e.dataset.id === c.block); if (el) rect = el.getBoundingClientRect();
+  }
+  if (!rect) return null;
+  return { x: right ? rect.right : rect.left, y: rect.top };
+}
 function renderNoteMarks() {
-  const box = $('#notemarks'); if (!box || !S.doc) return;
-  const byBlock = new Map();
-  for (const c of comments()) if (!c.done) byBlock.set(c.block, (byBlock.get(c.block) || []).concat(c));
+  const box = $('#notemarks'); if (!box || !S.doc || S.view !== 'text') return;
+  const base = $('#sheet').getBoundingClientRect();
+  const z = parseFloat($('#sheet-wrap').style.zoom) || 1;
   let html = '';
-  for (const el of editor.children) {
-    const cs = byBlock.get(el.dataset.id); if (!cs) continue;
-    html += `<button class="nmark" style="top:${el.offsetTop}px" data-nm="${cs[0].id}" title="${escHTML(cs.map(c => c.text || '(empty note)').join(' · '))}">${cs.length > 1 ? cs.length : ''}</button>`;
+  for (const c of comments()) {
+    const p = noteSpot(c); if (!p) continue;
+    html += `<button class="nmark" style="left:${(p.x - base.left) / z - 3}px;top:${(p.y - base.top) / z - 11}px" data-nm="${c.id}" title="${escHTML(c.text || 'Note')}">${icon('note')}</button>`;
   }
   if (box._h !== html) { box.innerHTML = html; box._h = html; }
 }
-$('#sheet').addEventListener('click', e => {
-  const m = e.target.closest('[data-nm]'); if (!m) return;
-  openSide('notes'); renderNotes(); flashNote(m.dataset.nm);
-  const t = $(`#side-notes [data-ctext="${m.dataset.nm}"]`); if (t) { t.closest('.note').scrollIntoView({ block: 'nearest' }); }
+function openNote(id, isNew) {
+  const c = comments().find(x => x.id === id); if (!c) return;
+  const mk = $(`#notemarks [data-nm="${id}"]`);
+  const pop = $('#notepop');
+  pop.innerHTML = `<textarea id="note-ta" rows="3" placeholder="Write a note… (Enter to save)">${escHTML(c.text)}</textarea>
+    <div class="np-f"><span>${fmtDate(c.at)}</span><button class="lnk" id="note-del">Delete</button></div>`;
+  pop.classList.remove('hidden'); pop._id = id; pop._new = isNew && !c.text;
+  const r = (mk || editor).getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = Math.min(Math.max(8, r.left - 10), innerWidth - w - 8), top = r.bottom + 6;
+  if (top + h > innerHeight - 30) top = Math.max(8, r.top - h - 6);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+  const ta = $('#note-ta'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeNote(true); }
+    if (e.key === 'Escape') { e.preventDefault(); closeNote(false); }
+  };
+  $('#note-del').onclick = () => { pop.classList.add('hidden'); pop._id = null; removeNote(id); editor.focus(); };
+}
+function closeNote(save) {
+  const pop = $('#notepop'); const id = pop._id; if (!id) return;
+  const c = comments().find(x => x.id === id);
+  const txt = $('#note-ta') ? $('#note-ta').value.trim() : '';
+  pop.classList.add('hidden'); pop._id = null;
+  if (!c) return;
+  if (save || txt) { c.text = txt; metaChanged(); }
+  if (!c.text && pop._new) removeNote(id);       // a new note left empty disappears
+  renderNoteMarks();
+}
+document.addEventListener('pointerdown', e => {
+  const pop = $('#notepop');
+  if (pop._id && !pop.contains(e.target) && !e.target.closest('[data-nm]')) closeNote(true);
+}, true);
+$('#sheet').addEventListener('click', e => { const m = e.target.closest('[data-nm]'); if (m) { e.stopPropagation(); openNote(m.dataset.nm, false); } });
+// right click: remember the spot; desktop app adds "Add note" to its own menu, the web version shows a small menu
+editor.addEventListener('contextmenu', e => {
+  const sel = getSelection();
+  let r = null;
+  if (sel.rangeCount && !sel.isCollapsed) {
+    const sr = sel.getRangeAt(0);
+    if ([...sr.getClientRects()].some(q => e.clientX >= q.left - 2 && e.clientX <= q.right + 2 && e.clientY >= q.top - 2 && e.clientY <= q.bottom + 2)) r = sr.cloneRange();
+  }
+  if (!r) r = rangeAt(e.clientX, e.clientY);
+  ctxRange = r;
+  if (Store.native && Native.onAddNote) return;
+  e.preventDefault();
+  const a = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY, width: 0, height: 0 }), contains: () => false };
+  openPop(a, mi('note', 'Add note') + (r && !r.collapsed ? mi('copy', 'Copy') + mi('cut', 'Cut') : ''), v => {
+    if (v === 'note') addNote(ctxRange);
+    else { const s2 = getSelection(); s2.removeAllRanges(); s2.addRange(ctxRange); document.execCommand(v); }
+  });
 });
+if (Store.native && Native.onAddNote) Native.onAddNote(() => addNote(ctxRange));
 function openSide(which) {
   $('#side').classList.add('open');
   $$('#side-seg button').forEach(x => x.classList.toggle('on', x.dataset.side === which));
-  ['scenes', 'chars', 'notes'].forEach(k => $('#side-' + k).classList.toggle('hidden', k !== which));
-  if (which === 'notes') renderNotes();
+  ['scenes', 'chars'].forEach(k => $('#side-' + k).classList.toggle('hidden', k !== which));
   if (S.zoom == null) applyZoom();
 }
 
@@ -1217,6 +1294,7 @@ function applyZoom() {
     z = Math.min(1, Math.max(0.5, avail / (paper.w * 96)));
   }
   $('#sheet-wrap').style.zoom = z; $('#titleview').style.zoom = z;
+  requestAnimationFrame(renderNoteMarks);
   $('#zoomv').textContent = Math.round(z * 100) + '%';
 }
 function zoomBy(d) {
@@ -1301,7 +1379,7 @@ function helpDialog() {
       <tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Change the element. On a new empty line, Tab first picks what usually comes next (Character → Dialogue), then cycles.</td></tr>
       <tr><td>${keys.map(k => `<kbd>Ctrl+${T[k].key}</kbd>`).join(' ')}</td><td>${keys.map(k => T[k].label).join(' · ')}</td></tr>
       <tr><td><kbd>Ctrl+B</kbd> <kbd>Ctrl+I</kbd> <kbd>Ctrl+U</kbd></td><td>Bold, italic, underline</td></tr>
-      <tr><td><kbd>Ctrl+Alt+M</kbd></td><td>Add a note at the cursor (notes are never exported)</td></tr>
+      <tr><td>Right click › Add note · <kbd>Ctrl+Alt+M</kbd></td><td>Add a note at that spot, or on the selected words (notes are never exported). Enter saves it; click the yellow icon to read, change or delete it.</td></tr>
       <tr><td><kbd>Shift+F3</kbd></td><td>Change case of the selection or line: UPPER → lower → Sentence</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a suggestion (characters, locations, time of day)</td></tr>
       <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo</td></tr>
@@ -1452,7 +1530,7 @@ document.addEventListener('click', e => {
     case 'home': return showLibrary();
     case 'toggle-side': $('#side').classList.toggle('open'); if (S.zoom == null) applyZoom(); return;
     case 'style-menu': return styleMenu();
-    case 'add-note': return addComment();
+    case 'add-note': return addNote();
     case 'tab': if (document.activeElement !== editor) editor.focus(); return tabCmd(false);
     case 'undo': return undo();
     case 'redo': return redo();

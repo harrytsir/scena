@@ -288,23 +288,16 @@ kbd { font-family: var(--ui); font-size: 11px; border: 1px solid var(--line); bo
 @media (max-width: 900px) { .fv { flex-direction: column; } .fv-nav { position: static; width: auto; flex-direction: row; overflow-x: auto; padding: 10px; } .fv-nav button { white-space: nowrap; } }
 
 /* ---------- Notes ---------- */
-.notemarks { position: absolute; left: 1.5in; top: 1in; right: 0; z-index: 2; pointer-events: none; }
-.nmark { position: absolute; left: calc(var(--sheetw, 8.27in) - 2.5in + 0.22in); width: 18px; height: 16px; border: 0; border-radius: 4px 4px 4px 1px; background: #facc15; color: #3f3000; font: 600 10px/16px var(--ui); padding: 0; cursor: pointer; pointer-events: auto; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
-.nmark:hover { background: #eab308; }
-.side-tabs .cnt { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: #facc15; color: #3f3000; font-size: 10px; line-height: 16px; text-align: center; }
-.note-add { margin: 2px 0 10px; width: 100%; justify-content: center; }
-.note-add i[data-ic], .note-add svg { width: 14px; height: 14px; }
-.note { border: 1px solid var(--line); border-left: 3px solid #facc15; border-radius: 8px; padding: 8px 9px; margin-bottom: 8px; background: var(--panel); transition: box-shadow .2s; }
-.note.done { opacity: .55; border-left-color: var(--line); }
-.note.flash { box-shadow: 0 0 0 3px color-mix(in srgb, #facc15 55%, transparent); }
-.note-q { font-family: var(--script-font); font-size: 11px; color: var(--dim); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
-.note-q:hover { color: var(--ink); text-decoration: underline; }
-.note textarea { width: 100%; resize: none; border: 0; padding: 2px 0; background: transparent; font-size: 12.5px; overflow: hidden; box-shadow: none !important; }
-.note-f { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); margin-top: 4px; }
-.lnk { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 11px; padding: 0 0 0 8px; }
-.lnk:hover { color: var(--ink); text-decoration: underline; }
-.side-tabs button { display: inline-flex; align-items: center; gap: 4px; }
-
+.notemarks { position: absolute; left: 0; top: 0; right: 0; z-index: 2; pointer-events: none; }
+.nmark { position: absolute; width: 16px; height: 15px; border: 0; padding: 0; background: transparent; color: #a16207; cursor: pointer; pointer-events: auto; }
+.nmark svg { width: 16px; height: 15px; fill: #facc15; stroke: #a16207; stroke-width: 1.6; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
+.nmark:hover svg { fill: #eab308; }
+.editor span[data-c^="r"] { background: #fef08a; box-shadow: 0 0 0 1px #fde047; border-radius: 2px; }
+body.dark .editor span[data-c^="r"] { background: #5b4a0c; box-shadow: none; }
+.notepop { position: fixed; z-index: 95; width: 280px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.16); padding: 10px; }
+body.dark .notepop { background: #2a2414; border-color: #5b4a0c; }
+.notepop textarea { width: 100%; border: 0; background: transparent; resize: vertical; font-size: 13px; padding: 2px; box-shadow: none !important; min-height: 54px; }
+.np-f { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--faint); margin-top: 4px; }
 .cards-empty { grid-column: 1 / -1; max-width: 520px; margin: 50px auto; text-align: center; color: var(--dim); line-height: 1.6; }
 .cards-empty .ce-t { font-size: 16px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
 .exp-list { gap: 4px; }

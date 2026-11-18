@@ -83,14 +83,14 @@ const WORDS = {
 /* ---------- rich runs: [{t, b, i, u}] ---------- */
 function plainRuns(text) { return [{ t: text || '' }]; }
 function runsOf(b) { return b.runs && b.runs.length ? b.runs : plainRuns(b.text); }
-function hasFmt(runs) { return runs.some(r => r.b || r.i || r.u); }
+function hasFmt(runs) { return runs.some(r => r.b || r.i || r.u || r.c); }
 function normRuns(runs) {
   const out = [];
   for (const r of runs) {
     if (!r.t) continue;
     const p = out[out.length - 1];
-    if (p && !!p.b === !!r.b && !!p.i === !!r.i && !!p.u === !!r.u) p.t += r.t;
-    else { const n = { t: r.t }; if (r.b) n.b = 1; if (r.i) n.i = 1; if (r.u) n.u = 1; out.push(n); }
+    if (p && !!p.b === !!r.b && !!p.i === !!r.i && !!p.u === !!r.u && (p.c || '') === (r.c || '')) p.t += r.t;
+    else { const n = { t: r.t }; if (r.b) n.b = 1; if (r.i) n.i = 1; if (r.u) n.u = 1; if (r.c) n.c = r.c; out.push(n); }
   }
   return out;
 }
@@ -110,12 +110,13 @@ function setBlockRuns(b, runs) {
   if (hasFmt(runs)) b.runs = runs; else delete b.runs;
   return b;
 }
-function runsHTML(runs) {
+function runsHTML(runs, inEditor) {
   return runs.map(r => {
     let h = escHTML(r.t);
     if (r.u) h = '<u>' + h + '</u>';
     if (r.i) h = '<i>' + h + '</i>';
     if (r.b) h = '<b>' + h + '</b>';
+    if (inEditor && r.c) h = `<span data-c="${r.c}">${h}</span>`;
     return h;
   }).join('');
 }

@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('scenaNative', {
   version: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('app:check'),
   restart: () => ipcRenderer.invoke('app:restart'),
-  onUpdate: (cb) => ipcRenderer.on('update-ready', (e, info) => cb(info))
+  onUpdate: (cb) => ipcRenderer.on('update-ready', (e, info) => cb(info)),
+  onAddNote: (cb) => ipcRenderer.on('ctx-add-note', () => cb())
 });
