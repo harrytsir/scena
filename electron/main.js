@@ -175,8 +175,11 @@ else {
     });
     Menu.setApplicationMenu(null);
     createWindow();
-    setTimeout(checkUpdate, 8000);
-    setInterval(checkUpdate, 3 * 60 * 60 * 1000);
+    setTimeout(checkUpdate, 5000);
+    setInterval(checkUpdate, 30 * 60 * 1000);
+    // also check whenever you come back to the window (at most every 10 minutes)
+    let last = Date.now();
+    app.on('browser-window-focus', () => { if (Date.now() - last > 10 * 60 * 1000) { last = Date.now(); checkUpdate(); } });
   });
   app.on('window-all-closed', () => app.quit());
 }
